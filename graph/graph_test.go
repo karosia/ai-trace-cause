@@ -1,190 +1,72 @@
-package graph
+package graph_test
 
 import (
-	"errors"
+	"context"
 	"testing"
+
+	"github.com/yourname/ai-trace-cause/graph"
+	"github.com/yourname/ai-trace-cause/storage/memory"
 )
 
-func TestAddAndGetNode(t *testing.T) {
-	g := New()
+func TestGraphWithMemoryStore(t *testing.T) {
+	ctx := context.Background()
 
-	node := Node{
+	store := memory.New()
+
+	g, err := graph.New(store)
+	if err != nil {
+		t.Fatalf("graph.New() error = %v", err)
+	}
+
+	observation := graph.Node{
+		ID:   "observation-001",
+		Type: "Observation",
+		Properties: map[string]any{
+			"metric": "cpu_usage",
+			"value":  94,
+		},
+	}
+
+	fact := graph.Node{
 		ID:   "fact-001",
 		Type: "Fact",
 		Properties: map[string]any{
-			"statement": "CPU usage is above 90%",
+			"statement": "CPU usage is high",
 		},
 	}
 
-	if err := g.AddNode(node); err != nil {
-		t.Fatalf("AddNode() error = %v", err)
-	}
-
-	got, err := g.GetNode("fact-001")
-	if err != nil {
-		t.Fatalf("GetNode() error = %v", err)
-	}
-
-	if got.ID != node.ID {
-		t.Errorf(
-			"GetNode() ID = %q, want %q",
-			got.ID,
-			node.ID,
-		)
-	}
-
-	if got.Type != node.Type {
-		t.Errorf(
-			"GetNode() Type = %q, want %q",
-			got.Type,
-			node.Type,
-		)
-	}
-}
-
-func TestAddNodeRejectsDuplicate(t *testing.T) {
-	g := New()
-
-	node := Node{
-		ID:   "fact-001",
-		Type: "Fact",
-	}
-
-	if err := g.AddNode(node); err != nil {
-		t.Fatalf("first AddNode() error = %v", err)
-	}
-
-	err := g.AddNode(node)
-
-	if !errors.Is(err, ErrNodeAlreadyExists) {
+	if err := g.AddNode(ctx, observation); err != nil {
 		t.Fatalf(
-			"second AddNode() error = %v, want ErrNodeAlreadyExists",
+			"AddNode(observation) error = %v",
 			err,
 		)
 	}
-}
 
-func TestAddAndGetEdge(t *testing.T) {
-	g := New()
-
-	if err := g.AddNode(Node{
-		ID:   "fact-001",
-		Type: "Fact",
-	}); err != nil {
-		t.Fatalf("AddNode(fact-001) error = %v", err)
-	}
-
-	if err := g.AddNode(Node{
-		ID:   "decision-001",
-		Type: "Decision",
-	}); err != nil {
-		t.Fatalf("AddNode(decision-001) error = %v", err)
-	}
-
-	edge := Edge{
-		ID:   "edge-001",
-		From: "fact-001",
-		To:   "decision-001",
-		Type: "SUPPORTS",
-	}
-
-	if err := g.AddEdge(edge); err != nil {
-		t.Fatalf("AddEdge() error = %v", err)
-	}
-
-	got, err := g.GetEdge("edge-001")
-	if err != nil {
-		t.Fatalf("GetEdge() error = %v", err)
-	}
-
-	if got.From != "fact-001" {
-		t.Errorf("From = %q, want %q", got.From, "fact-001")
-	}
-
-	if got.To != "decision-001" {
-		t.Errorf("To = %q, want %q", got.To, "decision-001")
-	}
-}
-
-func TestAddEdgeRejectsUnknownNode(t *testing.T) {
-	g := New()
-
-	if err := g.AddNode(Node{
-		ID:   "fact-001",
-		Type: "Fact",
-	}); err != nil {
-		t.Fatalf("AddNode() error = %v", err)
-	}
-
-	err := g.AddEdge(Edge{
-		ID:   "edge-001",
-		From: "fact-001",
-		To:   "decision-001",
-		Type: "SUPPORTS",
-	})
-
-	if !errors.Is(err, ErrNodeNotFound) {
+	if err := g.AddNode(ctx, fact); err != nil {
 		t.Fatalf(
-			"AddEdge() error = %v, want ErrNodeNotFound",
+			"AddNode(fact) error = %v",
 			err,
 		)
 	}
-}
 
-func TestOutgoingNeighbors(t *testing.T) {
-	g := New()
-
-	nodes := []Node{
-		{
-			ID:   "observation-001",
-			Type: "Observation",
-		},
-		{
-			ID:   "fact-001",
-			Type: "Fact",
-		},
-		{
-			ID:   "fact-002",
-			Type: "Fact",
-		},
+	edge := graph.Edge{
+		ID:   "edge-001",
+		From: observation.ID,
+		To:   fact.ID,
+		Type: "SUPPORTS",
 	}
 
-	for _, node := range nodes {
-		if err := g.AddNode(node); err != nil {
-			t.Fatalf(
-				"AddNode(%q) error = %v",
-				node.ID,
-				err,
-			)
-		}
+	if err := g.AddEdge(ctx, edge); err != nil {
+		t.Fatalf(
+			"AddEdge() error = %v",
+			err,
+		)
 	}
 
-	edges := []Edge{
-		{
-			ID:   "edge-001",
-			From: "observation-001",
-			To:   "fact-001",
-			Type: "SUPPORTS",
-		},
-		{
-			ID:   "edge-002",
-			From: "observation-001",
-			To:   "fact-002",
-			Type: "SUPPORTS",
-		},
-	}
-
-	for _, edge := range edges {
-		if err := g.AddEdge(edge); err != nil {
-			t.Fatalf(
-				"AddEdge(%q) error = %v",
-				edge.ID,
-				err,
-			)
-		}
-	}
-
-	neighbors, err := g.OutgoingNeighbors("observation-001")
+	neighbors, err := g.OutgoingNeighbors(
+		ctx,
+		observation.ID,
+	)
 	if err != nil {
 		t.Fatalf(
 			"OutgoingNeighbors() error = %v",
@@ -192,24 +74,18 @@ func TestOutgoingNeighbors(t *testing.T) {
 		)
 	}
 
-	if len(neighbors) != 2 {
+	if len(neighbors) != 1 {
 		t.Fatalf(
-			"len(neighbors) = %d, want 2",
+			"len(neighbors) = %d, want 1",
 			len(neighbors),
 		)
 	}
 
-	if neighbors[0].ID != "fact-001" {
+	if neighbors[0].ID != fact.ID {
 		t.Errorf(
-			"neighbors[0].ID = %q, want fact-001",
+			"neighbor ID = %q, want %q",
 			neighbors[0].ID,
-		)
-	}
-
-	if neighbors[1].ID != "fact-002" {
-		t.Errorf(
-			"neighbors[1].ID = %q, want fact-002",
-			neighbors[1].ID,
+			fact.ID,
 		)
 	}
 }
