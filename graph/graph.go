@@ -1,31 +1,28 @@
 package graph
 
 import (
-	"fmt"
+	"context"
 	"sort"
-	"sync"
 )
 
 type Graph struct {
-	mu sync.RWMutex
-
-	nodes map[string]Node
-	edges map[string]Edge
-
-	outgoing map[string]map[string]struct{}
-	incoming map[string]map[string]struct{}
+	store Store
 }
 
-func New() *Graph {
-	return &Graph{
-		nodes:    make(map[string]Node),
-		edges:    make(map[string]Edge),
-		outgoing: make(map[string]map[string]struct{}),
-		incoming: make(map[string]map[string]struct{}),
+func New(store Store) (*Graph, error) {
+	if store == nil {
+		return nil, ErrNilStore
 	}
+
+	return &Graph{
+		store: store,
+	}, nil
 }
 
-func (g *Graph) AddNode(node Node) error {
+func (g *Graph) AddNode(
+	ctx context.Context,
+	node Node,
+) error {
 	if node.ID == "" {
 		return ErrEmptyNodeID
 	}
@@ -34,31 +31,20 @@ func (g *Graph) AddNode(node Node) error {
 		return ErrEmptyNodeType
 	}
 
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if _, exists := g.nodes[node.ID]; exists {
-		return fmt.Errorf("%w: %s", ErrNodeAlreadyExists, node.ID)
-	}
-
-	g.nodes[node.ID] = cloneNode(node)
-
-	return nil
+	return g.store.PutNode(ctx, node)
 }
 
-func (g *Graph) GetNode(id string) (Node, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	node, exists := g.nodes[id]
-	if !exists {
-		return Node{}, fmt.Errorf("%w: %s", ErrNodeNotFound, id)
-	}
-
-	return cloneNode(node), nil
+func (g *Graph) GetNode(
+	ctx context.Context,
+	id string,
+) (Node, error) {
+	return g.store.GetNode(ctx, id)
 }
 
-func (g *Graph) AddEdge(edge Edge) error {
+func (g *Graph) AddEdge(
+	ctx context.Context,
+	edge Edge,
+) error {
 	if edge.ID == "" {
 		return ErrEmptyEdgeID
 	}
@@ -67,66 +53,34 @@ func (g *Graph) AddEdge(edge Edge) error {
 		return ErrEmptyEdgeType
 	}
 
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if _, exists := g.edges[edge.ID]; exists {
-		return fmt.Errorf("%w: %s", ErrEdgeAlreadyExists, edge.ID)
-	}
-
-	if _, exists := g.nodes[edge.From]; !exists {
-		return fmt.Errorf("%w: %s", ErrNodeNotFound, edge.From)
-	}
-
-	if _, exists := g.nodes[edge.To]; !exists {
-		return fmt.Errorf("%w: %s", ErrNodeNotFound, edge.To)
-	}
-
-	g.edges[edge.ID] = cloneEdge(edge)
-
-	if g.outgoing[edge.From] == nil {
-		g.outgoing[edge.From] = make(map[string]struct{})
-	}
-
-	if g.incoming[edge.To] == nil {
-		g.incoming[edge.To] = make(map[string]struct{})
-	}
-
-	g.outgoing[edge.From][edge.ID] = struct{}{}
-	g.incoming[edge.To][edge.ID] = struct{}{}
-
-	return nil
+	return g.store.PutEdge(ctx, edge)
 }
 
-func (g *Graph) GetEdge(id string) (Edge, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	edge, exists := g.edges[id]
-	if !exists {
-		return Edge{}, fmt.Errorf("%w: %s", ErrEdgeNotFound, id)
-	}
-
-	return cloneEdge(edge), nil
+func (g *Graph) GetEdge(
+	ctx context.Context,
+	id string,
+) (Edge, error) {
+	return g.store.GetEdge(ctx, id)
 }
 
-func (g *Graph) OutgoingNeighbors(nodeID string) ([]Node, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	if _, exists := g.nodes[nodeID]; !exists {
-		return nil, fmt.Errorf("%w: %s", ErrNodeNotFound, nodeID)
+func (g *Graph) OutgoingNeighbors(
+	ctx context.Context,
+	nodeID string,
+) ([]Node, error) {
+	edges, err := g.store.OutgoingEdges(ctx, nodeID)
+	if err != nil {
+		return nil, err
 	}
 
-	edgeIDs := g.outgoing[nodeID]
+	neighbors := make([]Node, 0, len(edges))
 
-	neighbors := make([]Node, 0, len(edgeIDs))
+	for _, edge := range edges {
+		node, err := g.store.GetNode(ctx, edge.To)
+		if err != nil {
+			return nil, err
+		}
 
-	for edgeID := range edgeIDs {
-		edge := g.edges[edgeID]
-		node := g.nodes[edge.To]
-
-		neighbors = append(neighbors, cloneNode(node))
+		neighbors = append(neighbors, node)
 	}
 
 	sort.Slice(neighbors, func(i, j int) bool {
@@ -136,23 +90,24 @@ func (g *Graph) OutgoingNeighbors(nodeID string) ([]Node, error) {
 	return neighbors, nil
 }
 
-func (g *Graph) IncomingNeighbors(nodeID string) ([]Node, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	if _, exists := g.nodes[nodeID]; !exists {
-		return nil, fmt.Errorf("%w: %s", ErrNodeNotFound, nodeID)
+func (g *Graph) IncomingNeighbors(
+	ctx context.Context,
+	nodeID string,
+) ([]Node, error) {
+	edges, err := g.store.IncomingEdges(ctx, nodeID)
+	if err != nil {
+		return nil, err
 	}
 
-	edgeIDs := g.incoming[nodeID]
+	neighbors := make([]Node, 0, len(edges))
 
-	neighbors := make([]Node, 0, len(edgeIDs))
+	for _, edge := range edges {
+		node, err := g.store.GetNode(ctx, edge.From)
+		if err != nil {
+			return nil, err
+		}
 
-	for edgeID := range edgeIDs {
-		edge := g.edges[edgeID]
-		node := g.nodes[edge.From]
-
-		neighbors = append(neighbors, cloneNode(node))
+		neighbors = append(neighbors, node)
 	}
 
 	sort.Slice(neighbors, func(i, j int) bool {
@@ -160,36 +115,4 @@ func (g *Graph) IncomingNeighbors(nodeID string) ([]Node, error) {
 	})
 
 	return neighbors, nil
-}
-
-func cloneNode(node Node) Node {
-	return Node{
-		ID:         node.ID,
-		Type:       node.Type,
-		Properties: cloneProperties(node.Properties),
-	}
-}
-
-func cloneEdge(edge Edge) Edge {
-	return Edge{
-		ID:         edge.ID,
-		From:       edge.From,
-		To:         edge.To,
-		Type:       edge.Type,
-		Properties: cloneProperties(edge.Properties),
-	}
-}
-
-func cloneProperties(properties map[string]any) map[string]any {
-	if properties == nil {
-		return nil
-	}
-
-	cloned := make(map[string]any, len(properties))
-
-	for key, value := range properties {
-		cloned[key] = value
-	}
-
-	return cloned
 }

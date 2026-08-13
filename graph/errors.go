@@ -3,6 +3,8 @@ package graph
 import "errors"
 
 var (
+	ErrNilStore = errors.New("store cannot be nil")
+
 	ErrEmptyNodeID       = errors.New("node ID cannot be empty")
 	ErrEmptyNodeType     = errors.New("node type cannot be empty")
 	ErrNodeNotFound      = errors.New("node not found")
