@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/yourname/ai-trace-cause/graph"
+	"github.com/karosia/ai-trace-cause/graph"
 )
 
 type Store struct {

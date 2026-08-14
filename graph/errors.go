@@ -14,4 +14,7 @@ var (
 	ErrEmptyEdgeType     = errors.New("edge type cannot be empty")
 	ErrEdgeNotFound      = errors.New("edge not found")
 	ErrEdgeAlreadyExists = errors.New("edge already exists")
+
+	ErrInvalidDirection = errors.New("invalid traversal direction")
+	ErrInvalidMaxDepth  = errors.New("max depth cannot be negative")
 )

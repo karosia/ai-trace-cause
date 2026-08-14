@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/yourname/ai-trace-cause/graph"
-	"github.com/yourname/ai-trace-cause/storage/memory"
+	"github.com/karosia/ai-trace-cause/graph"
+	"github.com/karosia/ai-trace-cause/storage/memory"
 )
 
 func TestGraphWithMemoryStore(t *testing.T) {
