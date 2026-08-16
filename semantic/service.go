@@ -2,22 +2,49 @@ package semantic
 
 import (
 	"context"
+	"time"
 
 	"github.com/karosia/ai-trace-cause/graph"
 )
 
 type Service struct {
 	graph *graph.Graph
+
+	now func() time.Time
 }
 
-func NewService(g *graph.Graph) (*Service, error) {
+type Option func(*Service)
+
+func WithClock(
+	now func() time.Time,
+) Option {
+	return func(service *Service) {
+		if now != nil {
+			service.now = now
+		}
+	}
+}
+
+func NewService(
+	g *graph.Graph,
+	options ...Option,
+) (*Service, error) {
 	if g == nil {
 		return nil, ErrNilGraph
 	}
 
-	return &Service{
+	service := &Service{
 		graph: g,
-	}, nil
+		now: func() time.Time {
+			return time.Now().UTC()
+		},
+	}
+
+	for _, option := range options {
+		option(service)
+	}
+
+	return service, nil
 }
 
 func (s *Service) RecordSource(
@@ -47,6 +74,11 @@ func (s *Service) RecordSource(
 		)
 	}
 
+	s.applyTemporal(
+		&node,
+		source.Validity,
+	)
+
 	return s.graph.AddNode(
 		ctx,
 		node,
@@ -74,6 +106,12 @@ func (s *Service) RecordObservation(ctx context.Context, observation Observation
 	if observation.Metadata != nil {
 		node.Properties["metadata"] = cloneMap(observation.Metadata)
 	}
+
+	s.applyTemporal(
+		&node,
+		observation.Validity,
+	)
+
 	return s.graph.AddNode(ctx, node)
 }
 
@@ -102,6 +140,11 @@ func (s *Service) RecordFact(ctx context.Context, fact Fact) error {
 	if fact.Metadata != nil {
 		node.Properties["metadata"] = cloneMap(fact.Metadata)
 	}
+
+	s.applyTemporal(
+		&node,
+		fact.Validity,
+	)
 
 	return s.graph.AddNode(ctx, node)
 }
@@ -138,6 +181,11 @@ func (s *Service) RecordDecision(
 			decision.Metadata,
 		)
 	}
+
+	s.applyTemporal(
+		&node,
+		decision.Validity,
+	)
 
 	return s.graph.AddNode(
 		ctx,
@@ -177,6 +225,11 @@ func (s *Service) RecordAction(
 			action.Metadata,
 		)
 	}
+
+	s.applyTemporal(
+		&node,
+		action.Validity,
+	)
 
 	return s.graph.AddNode(
 		ctx,
@@ -242,10 +295,11 @@ func (s *Service) Supports(
 	return s.graph.AddEdge(
 		ctx,
 		graph.Edge{
-			ID:   edgeID,
-			From: observationID,
-			To:   factID,
-			Type: string(RelationSupports),
+			ID:         edgeID,
+			From:       observationID,
+			To:         factID,
+			Type:       string(RelationSupports),
+			RecordedAt: s.now().UTC(),
 		},
 	)
 }
@@ -337,6 +391,29 @@ func (s *Service) TraceActionCause(
 	)
 }
 
+func (s *Service) TraceActionCauseAt(
+	ctx context.Context,
+	actionID string,
+	at time.Time,
+	maxDepth int,
+) ([]graph.Visit, error) {
+	if err := s.requireNodeType(
+		ctx,
+		actionID,
+		NodeTypeAction,
+	); err != nil {
+		return nil, err
+	}
+
+	return s.graph.BFSAt(
+		ctx,
+		actionID,
+		graph.DirectionIncoming,
+		maxDepth,
+		at,
+	)
+}
+
 func (s *Service) requireNodeType(ctx context.Context, nodeID string, expected NodeType) error {
 	node, err := s.graph.GetNode(ctx, nodeID)
 	if err != nil {
@@ -364,4 +441,31 @@ func cloneMap(values map[string]any) map[string]any {
 	}
 
 	return cloned
+}
+
+func (s *Service) applyTemporal(
+	node *graph.Node,
+	validity Validity,
+) {
+	node.RecordedAt = s.now().UTC()
+
+	node.ValidFrom = cloneTime(
+		validity.ValidFrom,
+	)
+
+	node.ValidUntil = cloneTime(
+		validity.ValidUntil,
+	)
+}
+
+func cloneTime(
+	value *time.Time,
+) *time.Time {
+	if value == nil {
+		return nil
+	}
+
+	cloned := *value
+
+	return &cloned
 }

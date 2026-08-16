@@ -1,5 +1,7 @@
 package semantic
 
+import "time"
+
 type NodeType string
 
 const (
@@ -26,6 +28,8 @@ type Source struct {
 	URI  string
 
 	Metadata map[string]any
+
+	Validity Validity
 }
 
 type Observation struct {
@@ -35,6 +39,8 @@ type Observation struct {
 	Value any
 
 	Metadata map[string]any
+
+	Validity Validity
 }
 
 type Fact struct {
@@ -45,6 +51,8 @@ type Fact struct {
 	Confidence float64
 
 	Metadata map[string]any
+
+	Validity Validity
 }
 
 type Decision struct {
@@ -55,6 +63,8 @@ type Decision struct {
 	Confidence float64
 
 	Metadata map[string]any
+
+	Validity Validity
 }
 
 type Action struct {
@@ -65,4 +75,11 @@ type Action struct {
 
 	Parameters map[string]any
 	Metadata   map[string]any
+
+	Validity Validity
+}
+
+type Validity struct {
+	ValidFrom  *time.Time
+	ValidUntil *time.Time
 }

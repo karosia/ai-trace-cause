@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/karosia/ai-trace-cause/graph"
 )
@@ -244,6 +245,11 @@ func cloneNode(node graph.Node) graph.Node {
 		ID:         node.ID,
 		Type:       node.Type,
 		Properties: cloneProperties(node.Properties),
+
+		RecordedAt: node.RecordedAt,
+
+		ValidFrom:  cloneTime(node.ValidFrom),
+		ValidUntil: cloneTime(node.ValidUntil),
 	}
 }
 
@@ -254,7 +260,20 @@ func cloneEdge(edge graph.Edge) graph.Edge {
 		To:         edge.To,
 		Type:       edge.Type,
 		Properties: cloneProperties(edge.Properties),
+
+		RecordedAt: edge.RecordedAt,
+
+		ValidFrom:  cloneTime(edge.ValidFrom),
+		ValidUntil: cloneTime(edge.ValidUntil),
 	}
+}
+
+func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+
+	return new(*value)
 }
 
 func cloneProperties(

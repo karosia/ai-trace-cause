@@ -31,6 +31,13 @@ func (g *Graph) AddNode(
 		return ErrEmptyNodeType
 	}
 
+	if err := validateValidityInterval(
+		node.ValidFrom,
+		node.ValidUntil,
+	); err != nil {
+		return err
+	}
+
 	return g.store.PutNode(ctx, node)
 }
 
@@ -51,6 +58,13 @@ func (g *Graph) AddEdge(
 
 	if edge.Type == "" {
 		return ErrEmptyEdgeType
+	}
+
+	if err := validateValidityInterval(
+		edge.ValidFrom,
+		edge.ValidUntil,
+	); err != nil {
+		return err
 	}
 
 	return g.store.PutEdge(ctx, edge)

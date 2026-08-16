@@ -17,4 +17,12 @@ var (
 
 	ErrInvalidDirection = errors.New("invalid traversal direction")
 	ErrInvalidMaxDepth  = errors.New("max depth cannot be negative")
+
+	ErrInvalidValidityInterval = errors.New(
+		"valid until must be after valid from",
+	)
+
+	ErrNodeNotVisibleAt = errors.New(
+		"node is not visible at the requested time",
+	)
 )
