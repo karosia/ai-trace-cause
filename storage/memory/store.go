@@ -250,6 +250,10 @@ func cloneNode(node graph.Node) graph.Node {
 
 		ValidFrom:  cloneTime(node.ValidFrom),
 		ValidUntil: cloneTime(node.ValidUntil),
+
+		Telemetry: cloneTelemetryRef(
+			node.Telemetry,
+		),
 	}
 }
 
@@ -265,6 +269,10 @@ func cloneEdge(edge graph.Edge) graph.Edge {
 
 		ValidFrom:  cloneTime(edge.ValidFrom),
 		ValidUntil: cloneTime(edge.ValidUntil),
+
+		Telemetry: cloneTelemetryRef(
+			edge.Telemetry,
+		),
 	}
 }
 
@@ -293,4 +301,17 @@ func cloneProperties(
 	}
 
 	return cloned
+}
+
+func cloneTelemetryRef(
+	ref *graph.TelemetryRef,
+) *graph.TelemetryRef {
+	if ref == nil {
+		return nil
+	}
+
+	return &graph.TelemetryRef{
+		TraceID: ref.TraceID,
+		SpanID:  ref.SpanID,
+	}
 }

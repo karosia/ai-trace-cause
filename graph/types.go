@@ -2,6 +2,11 @@ package graph
 
 import "time"
 
+type TelemetryRef struct {
+	TraceID string
+	SpanID  string
+}
+
 type Node struct {
 	ID         string
 	Type       string
@@ -11,6 +16,8 @@ type Node struct {
 
 	ValidFrom  *time.Time
 	ValidUntil *time.Time
+
+	Telemetry *TelemetryRef
 }
 
 type Edge struct {
@@ -24,4 +31,6 @@ type Edge struct {
 
 	ValidFrom  *time.Time
 	ValidUntil *time.Time
+
+	Telemetry *TelemetryRef
 }

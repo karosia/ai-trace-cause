@@ -11,6 +11,8 @@ type Service struct {
 	graph *graph.Graph
 
 	now func() time.Time
+
+	telemetry TelemetryHook
 }
 
 type Option func(*Service)
@@ -22,6 +24,14 @@ func WithClock(
 		if now != nil {
 			service.now = now
 		}
+	}
+}
+
+func WithTelemetryHook(
+	hook TelemetryHook,
+) Option {
+	return func(service *Service) {
+		service.telemetry = hook
 	}
 }
 
@@ -79,6 +89,11 @@ func (s *Service) RecordSource(
 		source.Validity,
 	)
 
+	s.applyTelemetry(
+		ctx,
+		&node,
+	)
+
 	return s.graph.AddNode(
 		ctx,
 		node,
@@ -110,6 +125,11 @@ func (s *Service) RecordObservation(ctx context.Context, observation Observation
 	s.applyTemporal(
 		&node,
 		observation.Validity,
+	)
+
+	s.applyTelemetry(
+		ctx,
+		&node,
 	)
 
 	return s.graph.AddNode(ctx, node)
@@ -144,6 +164,11 @@ func (s *Service) RecordFact(ctx context.Context, fact Fact) error {
 	s.applyTemporal(
 		&node,
 		fact.Validity,
+	)
+
+	s.applyTelemetry(
+		ctx,
+		&node,
 	)
 
 	return s.graph.AddNode(ctx, node)
@@ -185,6 +210,11 @@ func (s *Service) RecordDecision(
 	s.applyTemporal(
 		&node,
 		decision.Validity,
+	)
+
+	s.applyTelemetry(
+		ctx,
+		&node,
 	)
 
 	return s.graph.AddNode(
@@ -231,6 +261,11 @@ func (s *Service) RecordAction(
 		action.Validity,
 	)
 
+	s.applyTelemetry(
+		ctx,
+		&node,
+	)
+
 	return s.graph.AddNode(
 		ctx,
 		node,
@@ -259,14 +294,22 @@ func (s *Service) Produced(
 		return err
 	}
 
+	edge := graph.Edge{
+		ID:         edgeID,
+		From:       sourceID,
+		To:         observationID,
+		Type:       string(RelationProduced),
+		RecordedAt: s.now().UTC(),
+	}
+
+	s.applyEdgeTelemetry(
+		ctx,
+		&edge,
+	)
+
 	return s.graph.AddEdge(
 		ctx,
-		graph.Edge{
-			ID:   edgeID,
-			From: sourceID,
-			To:   observationID,
-			Type: string(RelationProduced),
-		},
+		edge,
 	)
 }
 
@@ -292,15 +335,22 @@ func (s *Service) Supports(
 		return err
 	}
 
+	edge := graph.Edge{
+		ID:         edgeID,
+		From:       observationID,
+		To:         factID,
+		Type:       string(RelationSupports),
+		RecordedAt: s.now().UTC(),
+	}
+
+	s.applyEdgeTelemetry(
+		ctx,
+		&edge,
+	)
+
 	return s.graph.AddEdge(
 		ctx,
-		graph.Edge{
-			ID:         edgeID,
-			From:       observationID,
-			To:         factID,
-			Type:       string(RelationSupports),
-			RecordedAt: s.now().UTC(),
-		},
+		edge,
 	)
 }
 
@@ -326,14 +376,22 @@ func (s *Service) BasisOf(
 		return err
 	}
 
+	edge := graph.Edge{
+		ID:         edgeID,
+		From:       factID,
+		To:         decisionID,
+		Type:       string(RelationBasisOf),
+		RecordedAt: s.now().UTC(),
+	}
+
+	s.applyEdgeTelemetry(
+		ctx,
+		&edge,
+	)
+
 	return s.graph.AddEdge(
 		ctx,
-		graph.Edge{
-			ID:   edgeID,
-			From: factID,
-			To:   decisionID,
-			Type: string(RelationBasisOf),
-		},
+		edge,
 	)
 }
 
@@ -359,14 +417,22 @@ func (s *Service) Caused(
 		return err
 	}
 
+	edge := graph.Edge{
+		ID:         edgeID,
+		From:       decisionID,
+		To:         actionID,
+		Type:       string(RelationCaused),
+		RecordedAt: s.now().UTC(),
+	}
+
+	s.applyEdgeTelemetry(
+		ctx,
+		&edge,
+	)
+
 	return s.graph.AddEdge(
 		ctx,
-		graph.Edge{
-			ID:   edgeID,
-			From: decisionID,
-			To:   actionID,
-			Type: string(RelationCaused),
-		},
+		edge,
 	)
 }
 
@@ -456,6 +522,48 @@ func (s *Service) applyTemporal(
 	node.ValidUntil = cloneTime(
 		validity.ValidUntil,
 	)
+}
+
+func (s *Service) applyTelemetry(
+	ctx context.Context,
+	node *graph.Node,
+) {
+	if s.telemetry == nil {
+		return
+	}
+
+	ref, ok := s.telemetry.CorrelationFromContext(
+		ctx,
+	)
+	if !ok {
+		return
+	}
+
+	node.Telemetry = &graph.TelemetryRef{
+		TraceID: ref.TraceID,
+		SpanID:  ref.SpanID,
+	}
+}
+
+func (s *Service) applyEdgeTelemetry(
+	ctx context.Context,
+	edge *graph.Edge,
+) {
+	if s.telemetry == nil {
+		return
+	}
+
+	ref, ok := s.telemetry.CorrelationFromContext(
+		ctx,
+	)
+	if !ok {
+		return
+	}
+
+	edge.Telemetry = &graph.TelemetryRef{
+		TraceID: ref.TraceID,
+		SpanID:  ref.SpanID,
+	}
 }
 
 func cloneTime(
