@@ -20,6 +20,39 @@ func NewService(g *graph.Graph) (*Service, error) {
 	}, nil
 }
 
+func (s *Service) RecordSource(
+	ctx context.Context,
+	source Source,
+) error {
+	if source.ID == "" {
+		return ErrEmptySourceID
+	}
+
+	if source.Kind == "" {
+		return ErrEmptySourceKind
+	}
+
+	node := graph.Node{
+		ID:   source.ID,
+		Type: string(NodeTypeSource),
+		Properties: map[string]any{
+			"kind": source.Kind,
+			"uri":  source.URI,
+		},
+	}
+
+	if source.Metadata != nil {
+		node.Properties["metadata"] = cloneMap(
+			source.Metadata,
+		)
+	}
+
+	return s.graph.AddNode(
+		ctx,
+		node,
+	)
+}
+
 func (s *Service) RecordObservation(ctx context.Context, observation Observation) error {
 	if observation.ID == "" {
 		return ErrEmptyObservationID
@@ -112,6 +145,78 @@ func (s *Service) RecordDecision(
 	)
 }
 
+func (s *Service) RecordAction(
+	ctx context.Context,
+	action Action,
+) error {
+	if action.ID == "" {
+		return ErrEmptyActionID
+	}
+
+	if action.Name == "" {
+		return ErrEmptyActionName
+	}
+
+	node := graph.Node{
+		ID:   action.ID,
+		Type: string(NodeTypeAction),
+		Properties: map[string]any{
+			"name":   action.Name,
+			"target": action.Target,
+		},
+	}
+
+	if action.Parameters != nil {
+		node.Properties["parameters"] = cloneMap(
+			action.Parameters,
+		)
+	}
+
+	if action.Metadata != nil {
+		node.Properties["metadata"] = cloneMap(
+			action.Metadata,
+		)
+	}
+
+	return s.graph.AddNode(
+		ctx,
+		node,
+	)
+}
+
+func (s *Service) Produced(
+	ctx context.Context,
+	edgeID string,
+	sourceID string,
+	observationID string,
+) error {
+	if err := s.requireNodeType(
+		ctx,
+		sourceID,
+		NodeTypeSource,
+	); err != nil {
+		return err
+	}
+
+	if err := s.requireNodeType(
+		ctx,
+		observationID,
+		NodeTypeObservation,
+	); err != nil {
+		return err
+	}
+
+	return s.graph.AddEdge(
+		ctx,
+		graph.Edge{
+			ID:   edgeID,
+			From: sourceID,
+			To:   observationID,
+			Type: string(RelationProduced),
+		},
+	)
+}
+
 func (s *Service) Supports(
 	ctx context.Context,
 	edgeID string,
@@ -175,6 +280,60 @@ func (s *Service) BasisOf(
 			To:   decisionID,
 			Type: string(RelationBasisOf),
 		},
+	)
+}
+
+func (s *Service) Caused(
+	ctx context.Context,
+	edgeID string,
+	decisionID string,
+	actionID string,
+) error {
+	if err := s.requireNodeType(
+		ctx,
+		decisionID,
+		NodeTypeDecision,
+	); err != nil {
+		return err
+	}
+
+	if err := s.requireNodeType(
+		ctx,
+		actionID,
+		NodeTypeAction,
+	); err != nil {
+		return err
+	}
+
+	return s.graph.AddEdge(
+		ctx,
+		graph.Edge{
+			ID:   edgeID,
+			From: decisionID,
+			To:   actionID,
+			Type: string(RelationCaused),
+		},
+	)
+}
+
+func (s *Service) TraceActionCause(
+	ctx context.Context,
+	actionID string,
+	maxDepth int,
+) ([]graph.Visit, error) {
+	if err := s.requireNodeType(
+		ctx,
+		actionID,
+		NodeTypeAction,
+	); err != nil {
+		return nil, err
+	}
+
+	return s.graph.BFS(
+		ctx,
+		actionID,
+		graph.DirectionIncoming,
+		maxDepth,
 	)
 }
 

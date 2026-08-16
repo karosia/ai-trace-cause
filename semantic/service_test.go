@@ -380,3 +380,541 @@ func TestDecisionCauseTrace(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordAction(t *testing.T) {
+	ctx := context.Background()
+
+	service, g := newTestService(t)
+
+	action := semantic.Action{
+		ID:     "action-001",
+		Name:   "scale_service",
+		Target: "payments-api",
+		Parameters: map[string]any{
+			"replicas": 5,
+		},
+	}
+
+	if err := service.RecordAction(
+		ctx,
+		action,
+	); err != nil {
+		t.Fatalf(
+			"RecordAction() error = %v",
+			err,
+		)
+	}
+
+	node, err := g.GetNode(
+		ctx,
+		action.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if node.Type != "Action" {
+		t.Errorf(
+			"node.Type = %q, want Action",
+			node.Type,
+		)
+	}
+
+	if node.Properties["name"] != "scale_service" {
+		t.Errorf(
+			"name = %v, want scale_service",
+			node.Properties["name"],
+		)
+	}
+
+	if node.Properties["target"] != "payments-api" {
+		t.Errorf(
+			"target = %v, want payments-api",
+			node.Properties["target"],
+		)
+	}
+}
+
+func TestRecordActionRejectsEmptyName(
+	t *testing.T,
+) {
+	ctx := context.Background()
+
+	service, _ := newTestService(t)
+
+	err := service.RecordAction(
+		ctx,
+		semantic.Action{
+			ID: "action-001",
+		},
+	)
+
+	if !errors.Is(
+		err,
+		semantic.ErrEmptyActionName,
+	) {
+		t.Fatalf(
+			"RecordAction() error = %v, want ErrEmptyActionName",
+			err,
+		)
+	}
+}
+
+func TestCaused(t *testing.T) {
+	ctx := context.Background()
+
+	service, g := newTestService(t)
+
+	decision := semantic.Decision{
+		ID:         "decision-001",
+		Outcome:    "Scale the service",
+		Rationale:  "CPU usage is too high",
+		Confidence: 0.92,
+	}
+
+	action := semantic.Action{
+		ID:     "action-001",
+		Name:   "scale_service",
+		Target: "payments-api",
+	}
+
+	if err := service.RecordDecision(
+		ctx,
+		decision,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RecordAction(
+		ctx,
+		action,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.Caused(
+		ctx,
+		"edge-caused",
+		decision.ID,
+		action.ID,
+	); err != nil {
+		t.Fatalf(
+			"Caused() error = %v",
+			err,
+		)
+	}
+
+	edge, err := g.GetEdge(
+		ctx,
+		"edge-caused",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if edge.From != decision.ID {
+		t.Errorf(
+			"edge.From = %q, want %q",
+			edge.From,
+			decision.ID,
+		)
+	}
+
+	if edge.To != action.ID {
+		t.Errorf(
+			"edge.To = %q, want %q",
+			edge.To,
+			action.ID,
+		)
+	}
+
+	if edge.Type != "CAUSED" {
+		t.Errorf(
+			"edge.Type = %q, want CAUSED",
+			edge.Type,
+		)
+	}
+}
+
+func TestCausedRejectsWrongDecisionType(
+	t *testing.T,
+) {
+	ctx := context.Background()
+
+	service, _ := newTestService(t)
+
+	fact := semantic.Fact{
+		ID:         "fact-001",
+		Statement:  "CPU usage is high",
+		Confidence: 0.98,
+	}
+
+	action := semantic.Action{
+		ID:   "action-001",
+		Name: "scale_service",
+	}
+
+	if err := service.RecordFact(
+		ctx,
+		fact,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RecordAction(
+		ctx,
+		action,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.Caused(
+		ctx,
+		"edge-caused",
+		fact.ID,
+		action.ID,
+	)
+
+	if !errors.Is(
+		err,
+		semantic.ErrUnexpectedNodeType,
+	) {
+		t.Fatalf(
+			"Caused() error = %v, want ErrUnexpectedNodeType",
+			err,
+		)
+	}
+}
+
+func TestTraceActionCause(t *testing.T) {
+	ctx := context.Background()
+
+	service, _ := newTestService(t)
+
+	observation := semantic.Observation{
+		ID:    "observation-001",
+		Name:  "cpu_usage",
+		Value: 94,
+	}
+
+	fact := semantic.Fact{
+		ID:         "fact-001",
+		Statement:  "CPU usage is high",
+		Confidence: 0.98,
+	}
+
+	decision := semantic.Decision{
+		ID:         "decision-001",
+		Outcome:    "Scale the service",
+		Rationale:  "CPU load is above the expected threshold",
+		Confidence: 0.92,
+	}
+
+	action := semantic.Action{
+		ID:     "action-001",
+		Name:   "scale_service",
+		Target: "payments-api",
+		Parameters: map[string]any{
+			"replicas": 5,
+		},
+	}
+
+	if err := service.RecordObservation(
+		ctx,
+		observation,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RecordFact(
+		ctx,
+		fact,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RecordDecision(
+		ctx,
+		decision,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RecordAction(
+		ctx,
+		action,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.Supports(
+		ctx,
+		"edge-supports",
+		observation.ID,
+		fact.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.BasisOf(
+		ctx,
+		"edge-basis",
+		fact.ID,
+		decision.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.Caused(
+		ctx,
+		"edge-caused",
+		decision.ID,
+		action.ID,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := service.TraceActionCause(
+		ctx,
+		action.ID,
+		3,
+	)
+	if err != nil {
+		t.Fatalf(
+			"TraceActionCause() error = %v",
+			err,
+		)
+	}
+
+	want := []string{
+		"action-001",
+		"decision-001",
+		"fact-001",
+		"observation-001",
+	}
+
+	if len(results) != len(want) {
+		t.Fatalf(
+			"len(results) = %d, want %d",
+			len(results),
+			len(want),
+		)
+	}
+
+	for i := range want {
+		if results[i].Node.ID != want[i] {
+			t.Errorf(
+				"results[%d].Node.ID = %q, want %q",
+				i,
+				results[i].Node.ID,
+				want[i],
+			)
+		}
+	}
+}
+
+func TestRecordSource(t *testing.T) {
+	ctx := context.Background()
+
+	service, g := newTestService(t)
+
+	source := semantic.Source{
+		ID:   "source-001",
+		Kind: "Prometheus",
+		URI:  "prometheus://production/cpu_usage",
+		Metadata: map[string]any{
+			"environment": "production",
+		},
+	}
+
+	if err := service.RecordSource(
+		ctx,
+		source,
+	); err != nil {
+		t.Fatalf(
+			"RecordSource() error = %v",
+			err,
+		)
+	}
+
+	node, err := g.GetNode(
+		ctx,
+		source.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if node.Type != "Source" {
+		t.Errorf(
+			"node.Type = %q, want Source",
+			node.Type,
+		)
+	}
+
+	if node.Properties["kind"] != source.Kind {
+		t.Errorf(
+			"kind = %v, want %q",
+			node.Properties["kind"],
+			source.Kind,
+		)
+	}
+
+	if node.Properties["uri"] != source.URI {
+		t.Errorf(
+			"uri = %v, want %q",
+			node.Properties["uri"],
+			source.URI,
+		)
+	}
+}
+
+func TestRecordSourceRejectsEmptyKind(
+	t *testing.T,
+) {
+	ctx := context.Background()
+
+	service, _ := newTestService(t)
+
+	err := service.RecordSource(
+		ctx,
+		semantic.Source{
+			ID: "source-001",
+		},
+	)
+
+	if !errors.Is(
+		err,
+		semantic.ErrEmptySourceKind,
+	) {
+		t.Fatalf(
+			"RecordSource() error = %v, want ErrEmptySourceKind",
+			err,
+		)
+	}
+}
+
+func TestProduced(t *testing.T) {
+	ctx := context.Background()
+
+	service, g := newTestService(t)
+
+	source := semantic.Source{
+		ID:   "source-001",
+		Kind: "Prometheus",
+	}
+
+	observation := semantic.Observation{
+		ID:    "observation-001",
+		Name:  "cpu_usage",
+		Value: 94,
+	}
+
+	if err := service.RecordSource(
+		ctx,
+		source,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RecordObservation(
+		ctx,
+		observation,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.Produced(
+		ctx,
+		"edge-produced",
+		source.ID,
+		observation.ID,
+	); err != nil {
+		t.Fatalf(
+			"Produced() error = %v",
+			err,
+		)
+	}
+
+	edge, err := g.GetEdge(
+		ctx,
+		"edge-produced",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if edge.From != source.ID {
+		t.Errorf(
+			"edge.From = %q, want %q",
+			edge.From,
+			source.ID,
+		)
+	}
+
+	if edge.To != observation.ID {
+		t.Errorf(
+			"edge.To = %q, want %q",
+			edge.To,
+			observation.ID,
+		)
+	}
+
+	if edge.Type != "PRODUCED" {
+		t.Errorf(
+			"edge.Type = %q, want PRODUCED",
+			edge.Type,
+		)
+	}
+}
+
+func TestProducedRejectsWrongSourceType(
+	t *testing.T,
+) {
+	ctx := context.Background()
+
+	service, _ := newTestService(t)
+
+	fact := semantic.Fact{
+		ID:         "fact-001",
+		Statement:  "CPU usage is high",
+		Confidence: 0.98,
+	}
+
+	observation := semantic.Observation{
+		ID:    "observation-001",
+		Name:  "cpu_usage",
+		Value: 94,
+	}
+
+	if err := service.RecordFact(
+		ctx,
+		fact,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.RecordObservation(
+		ctx,
+		observation,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.Produced(
+		ctx,
+		"edge-produced",
+		fact.ID,
+		observation.ID,
+	)
+
+	if !errors.Is(
+		err,
+		semantic.ErrUnexpectedNodeType,
+	) {
+		t.Fatalf(
+			"Produced() error = %v, want ErrUnexpectedNodeType",
+			err,
+		)
+	}
+}

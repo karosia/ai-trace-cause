@@ -3,17 +3,30 @@ package semantic
 type NodeType string
 
 const (
+	NodeTypeSource      NodeType = "Source"
 	NodeTypeObservation NodeType = "Observation"
 	NodeTypeFact        NodeType = "Fact"
 	NodeTypeDecision    NodeType = "Decision"
+	NodeTypeAction      NodeType = "Action"
 )
 
 type RelationType string
 
 const (
+	RelationProduced RelationType = "PRODUCED"
 	RelationSupports RelationType = "SUPPORTS"
 	RelationBasisOf  RelationType = "BASIS_OF"
+	RelationCaused   RelationType = "CAUSED"
 )
+
+type Source struct {
+	ID string
+
+	Kind string
+	URI  string
+
+	Metadata map[string]any
+}
 
 type Observation struct {
 	ID string
@@ -42,4 +55,14 @@ type Decision struct {
 	Confidence float64
 
 	Metadata map[string]any
+}
+
+type Action struct {
+	ID string
+
+	Name   string
+	Target string
+
+	Parameters map[string]any
+	Metadata   map[string]any
 }
