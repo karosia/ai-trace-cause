@@ -73,6 +73,45 @@ func (s *Service) RecordFact(ctx context.Context, fact Fact) error {
 	return s.graph.AddNode(ctx, node)
 }
 
+func (s *Service) RecordDecision(
+	ctx context.Context,
+	decision Decision,
+) error {
+	if decision.ID == "" {
+		return ErrEmptyDecisionID
+	}
+
+	if decision.Outcome == "" {
+		return ErrEmptyDecisionOutcome
+	}
+
+	if decision.Confidence < 0 ||
+		decision.Confidence > 1 {
+		return ErrInvalidConfidence
+	}
+
+	node := graph.Node{
+		ID:   decision.ID,
+		Type: string(NodeTypeDecision),
+		Properties: map[string]any{
+			"outcome":    decision.Outcome,
+			"rationale":  decision.Rationale,
+			"confidence": decision.Confidence,
+		},
+	}
+
+	if decision.Metadata != nil {
+		node.Properties["metadata"] = cloneMap(
+			decision.Metadata,
+		)
+	}
+
+	return s.graph.AddNode(
+		ctx,
+		node,
+	)
+}
+
 func (s *Service) Supports(
 	ctx context.Context,
 	edgeID string,
@@ -102,6 +141,39 @@ func (s *Service) Supports(
 			From: observationID,
 			To:   factID,
 			Type: string(RelationSupports),
+		},
+	)
+}
+
+func (s *Service) BasisOf(
+	ctx context.Context,
+	edgeID string,
+	factID string,
+	decisionID string,
+) error {
+	if err := s.requireNodeType(
+		ctx,
+		factID,
+		NodeTypeFact,
+	); err != nil {
+		return err
+	}
+
+	if err := s.requireNodeType(
+		ctx,
+		decisionID,
+		NodeTypeDecision,
+	); err != nil {
+		return err
+	}
+
+	return s.graph.AddEdge(
+		ctx,
+		graph.Edge{
+			ID:   edgeID,
+			From: factID,
+			To:   decisionID,
+			Type: string(RelationBasisOf),
 		},
 	)
 }

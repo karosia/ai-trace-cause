@@ -14,8 +14,16 @@ var (
 	ErrEmptyFactID        = errors.New("fact ID cannot be empty")
 	ErrEmptyFactStatement = errors.New("fact statement cannot be empty")
 
-	ErrInvalidConfidence  = errors.New("confidence must be between 0 and 1")
-	ErrUnexpectedNodeType = errors.New("unexpected node type")
+	ErrEmptyDecisionID      = errors.New("decision ID cannot be empty")
+	ErrEmptyDecisionOutcome = errors.New("decision outcome cannot be empty")
+
+	ErrInvalidConfidence = errors.New(
+		"confidence must be between 0 and 1",
+	)
+
+	ErrUnexpectedNodeType = errors.New(
+		"unexpected node type",
+	)
 )
 
 type UnexpectedNodeTypeError struct {
