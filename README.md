@@ -2,69 +2,54 @@
 
 **A Go-native foundation for tracing the causes behind AI agent decisions and actions.**
 
-`ai-trace-cause` is an open-source Go library for building observable and explainable AI agent systems.
+`ai-trace-cause` is an open-source Go library for building observable, traceable, and explainable AI agent systems.
 
-The project is designed to capture and connect the semantic relationships between what an AI agent **observed**, what it considered a **fact**, what it **decided**, what **action** it took, and where that information originally came from.
+Traditional observability tools are good at answering questions such as:
 
-Instead of only answering:
+- What happened?
+- Which service or tool was called?
+- How long did it take?
+- Where did an error occur?
 
-> What happened during an agent execution?
+AI agents introduce another important question:
 
-`ai-trace-cause` aims to help answer:
+> **Why did the agent do that?**
 
-> Why did the agent do that?
-
----
-
-## Motivation
-
-Traditional observability tools are good at describing how a system executed.
-
-For example, distributed tracing can show:
-
-```text
-Agent Run
-├── Retrieve Context
-├── LLM Call
-├── Tool Call
-└── Database Write
-```
-
-This is useful for understanding:
-
-* latency
-* errors
-* service dependencies
-* tool calls
-* execution flow
-
-However, it does not necessarily explain the semantic reasoning behind an AI agent's behavior.
-
-For example:
-
-```text
-Why did the agent call this tool?
-
-Which observation influenced this decision?
-
-Which fact was used as evidence?
-
-Where did that fact come from?
-
-What decision caused this action?
-```
-
-`ai-trace-cause` is intended to represent those relationships as a directed graph.
+`ai-trace-cause` provides a semantic and causal graph that connects what an agent observed, what it accepted as evidence, what it decided, what it actually executed, and where the original information came from.
 
 ---
 
-## Core Idea
+## Why ai-trace-cause?
 
-An agent execution can be represented as a causal graph.
+An AI agent may execute a workflow such as:
+
+```text
+Read metrics
+    ↓
+Interpret the system state
+    ↓
+Make a decision
+    ↓
+Call a tool
+```
+
+Operational tracing may show:
+
+```text
+agent.run
+├── metrics.fetch
+├── llm.decide
+└── tool.scale-service
+```
+
+But this does not necessarily explain why `tool.scale-service` was called.
+
+`ai-trace-cause` models the semantic chain behind that execution:
 
 ```text
 Source
   │
+  │ PRODUCED
   ▼
 Observation
   │
@@ -81,112 +66,381 @@ Decision
 Action
 ```
 
-For example:
+This makes it possible to answer questions such as:
+
+- Why did the agent call this tool?
+- Which facts influenced this decision?
+- Which observations supported those facts?
+- Where did the original information come from?
+- What did the agent know when the action occurred?
+- Which OpenTelemetry trace or span produced this decision?
+- Which action resulted from a particular fact or observation?
+
+---
+
+## Core Semantic Model
+
+The current semantic model consists of five primary entity types.
+
+### Source
+
+Represents where information originated.
+
+Examples:
+
+```text
+Prometheus
+CloudWatch
+REST API
+Database
+Uploaded document
+User input
+MCP tool
+Another agent
+```
+
+### Observation
+
+Represents something observed from the external world.
+
+Example:
+
+```text
+CPU usage = 94%
+```
+
+### Fact
+
+Represents information accepted as usable evidence.
+
+Example:
+
+```text
+The service is under high CPU load.
+```
+
+### Decision
+
+Represents a judgment or selected outcome.
+
+Example:
+
+```text
+Scale the service.
+```
+
+### Action
+
+Represents something actually executed.
+
+Example:
+
+```text
+scale_service
+target = payments-api
+replicas = 5
+```
+
+Together:
 
 ```text
 Prometheus
     │
+    │ PRODUCED
     ▼
-CPU Usage = 94%
+CPU usage = 94%
     │
+    │ SUPPORTS
     ▼
-High CPU Load
+CPU usage is high
     │
+    │ BASIS_OF
     ▼
-Scale Service
+Scale the service
     │
+    │ CAUSED
     ▼
-Increase Replicas to 5
+scale_service(replicas=5)
 ```
-
-Each item can be represented as a **Node**, while the relationship between them is represented as an **Edge**.
 
 ---
 
-## Project Goals
+## Installation
 
-`ai-trace-cause` is being designed as infrastructure for AI agent observability and explainability.
+```bash
+go get github.com/yourname/ai-trace-cause
+```
 
-The long-term goals include:
+Replace `github.com/yourname/ai-trace-cause` with the actual module path.
 
-* graph-based agent execution context
-* observation and fact tracking
-* decision lineage
-* action causality
-* provenance tracking
-* causal graph traversal
-* temporal context
-* OpenTelemetry integration
-* pluggable storage backends
-* AI provider integrations
+---
 
-The core library is intended to remain independent of specific AI providers.
+## Quick Start
 
-The library itself does not need to directly call OpenAI, Anthropic, Gemini, or another LLM provider.
+Create a trace runtime:
 
-Instead, an application can use its preferred AI SDK and record relevant execution information through `ai-trace-cause`.
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	aitracecause "github.com/karosia/ai-trace-cause"
+)
+
+func main() {
+	ctx := context.Background()
+
+	trace, err := aitracecause.New()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	source := aitracecause.Source{
+		ID:   "source-001",
+		Kind: "Prometheus",
+		URI:  "prometheus://production/cpu_usage",
+	}
+
+	observation := aitracecause.Observation{
+		ID:    "observation-001",
+		Name:  "cpu_usage",
+		Value: 94,
+		Metadata: map[string]any{
+			"unit": "%",
+		},
+	}
+
+	fact := aitracecause.Fact{
+		ID:         "fact-001",
+		Statement:  "CPU usage is high",
+		Confidence: 0.98,
+	}
+
+	decision := aitracecause.Decision{
+		ID:         "decision-001",
+		Outcome:    "Scale the service",
+		Rationale:  "CPU utilization is consistently above 90%",
+		Confidence: 0.92,
+	}
+
+	action := aitracecause.Action{
+		ID:     "action-001",
+		Name:   "scale_service",
+		Target: "payments-api",
+		Parameters: map[string]any{
+			"replicas": 5,
+		},
+	}
+
+	if err := trace.RecordSource(ctx, source); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := trace.RecordObservation(ctx, observation); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := trace.RecordFact(ctx, fact); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := trace.RecordDecision(ctx, decision); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := trace.RecordAction(ctx, action); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := trace.Produced(
+		ctx,
+		"edge-produced",
+		source.ID,
+		observation.ID,
+	); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := trace.Supports(
+		ctx,
+		"edge-supports",
+		observation.ID,
+		fact.ID,
+	); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := trace.BasisOf(
+		ctx,
+		"edge-basis",
+		fact.ID,
+		decision.ID,
+	); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := trace.Caused(
+		ctx,
+		"edge-caused",
+		decision.ID,
+		action.ID,
+	); err != nil {
+		log.Fatal(err)
+	}
+
+	causes, err := trace.TraceActionCause(
+		ctx,
+		action.ID,
+		4,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, visit := range causes {
+		fmt.Printf(
+			"%s %s depth=%d\n",
+			visit.Node.Type,
+			visit.Node.ID,
+			visit.Depth,
+		)
+	}
+}
+```
+
+Expected traversal:
 
 ```text
-OpenAI
-Anthropic
-Gemini
-Custom Agent
-     │
-     ▼
-Application
-     │
-     ▼
-ai-trace-cause
-     │
-     ▼
-Causal / Decision Graph
+Action action-001 depth=0
+Decision decision-001 depth=1
+Fact fact-001 depth=2
+Observation observation-001 depth=3
+Source source-001 depth=4
 ```
 
 ---
 
-## Current Status
+## Public SDK
 
-The project is currently in an early development stage.
+The root package provides a simplified API for applications.
 
-The following foundations are implemented:
+Instead of manually creating:
 
-* directed graph representation
-* nodes and edges
-* node lookup
-* edge lookup
-* incoming relationship indexes
-* outgoing relationship indexes
-* neighbor lookup
-* storage abstraction
-* in-memory storage backend
-* concurrent-safe in-memory operations
-* context-aware storage API
+```go
+store := memory.New()
 
-Higher-level AI concepts such as `Observation`, `Fact`, `Decision`, `Action`, and `Provenance` will be built on top of this graph foundation.
+g, err := graph.New(store)
+
+service, err := semantic.NewService(g)
+```
+
+applications can simply use:
+
+```go
+trace, err := aitracecause.New()
+```
+
+The root SDK acts as a facade over:
+
+```text
+Storage
+Graph
+Traversal
+Semantic model
+Temporal context
+Telemetry correlation
+```
+
+The main public APIs are:
+
+```go
+trace.RecordSource(...)
+trace.RecordObservation(...)
+trace.RecordFact(...)
+trace.RecordDecision(...)
+trace.RecordAction(...)
+```
+
+Relationships:
+
+```go
+trace.Produced(...)
+trace.Supports(...)
+trace.BasisOf(...)
+trace.Caused(...)
+```
+
+Tracing:
+
+```go
+trace.TraceActionCause(...)
+trace.TraceActionCauseAt(...)
+```
+
+Configuration:
+
+```go
+aitracecause.WithStore(...)
+aitracecause.WithMemoryStore()
+aitracecause.WithClock(...)
+aitracecause.WithTelemetryHook(...)
+```
 
 ---
 
 ## Architecture
 
-The graph layer does not directly depend on a specific database.
-
-Instead, it depends on a small `Store` interface.
-
 ```text
-                     Graph
-                       │
-                       ▼
-                Store Interface
-                       ▲
-             ┌─────────┼─────────┐
-             │         │         │
-             ▼         ▼         ▼
-          Memory    PostgreSQL   Neo4j
+                     External Application
+
+                              │
+                              ▼
+
+                       aitracecause.New()
+
+                              │
+                              ▼
+
+                          Trace SDK
+                              │
+               ┌──────────────┴──────────────┐
+               │                             │
+               ▼                             ▼
+
+        Semantic Service                 Graph Engine
+               │                             │
+     ┌─────────┼──────────┐        ┌─────────┴─────────┐
+     │         │          │        │                   │
+     ▼         ▼          ▼        ▼                   ▼
+
+ Provenance  Causality  Temporal  BFS / DFS           Store
+
+                                                     │
+                                                     ▼
+
+                                              Store Interface
+                                                     │
+                                                     ▼
+
+                                               Memory Store
+
+
+Optional Telemetry:
+
+OpenTelemetry
+      │
+      ▼
+telemetry/otel
+      │
+      ▼
+TelemetryHook
+      │
+      ▼
+Semantic Service
 ```
-
-Currently, only the in-memory implementation exists.
-
-This separation allows graph and causal reasoning logic to remain independent from the storage backend.
 
 ---
 
@@ -194,298 +448,357 @@ This separation allows graph and causal reasoning logic to remain independent fr
 
 ```text
 ai-trace-cause/
+├── aitracecause.go
+├── aitracecause_test.go
+├── options.go
+├── types.go
+│
 ├── graph/
-│   ├── types.go
 │   ├── errors.go
-│   ├── store.go
 │   ├── graph.go
-│   └── graph_test.go
+│   ├── graph_test.go
+│   ├── store.go
+│   ├── temporal.go
+│   ├── temporal_test.go
+│   ├── traversal.go
+│   ├── traversal_test.go
+│   └── types.go
+│
+├── semantic/
+│   ├── errors.go
+│   ├── service.go
+│   ├── service_test.go
+│   ├── story_test.go
+│   ├── telemetry.go
+│   ├── telemetry_test.go
+│   └── types.go
 │
 ├── storage/
 │   └── memory/
 │       ├── store.go
 │       └── store_test.go
 │
+├── telemetry/
+│   └── otel/
+│       ├── hook.go
+│       └── hook_test.go
+│
 └── go.mod
 ```
 
-### `graph`
+The structure may evolve as additional storage engines and agent integrations are introduced.
 
-Contains the graph domain and storage contract.
+---
 
-The graph package defines concepts such as:
+## Graph Core
+
+The graph package remains generic and independent of AI-specific concepts.
 
 ```go
 type Node struct {
-    ID         string
-    Type       string
-    Properties map[string]any
-}
+	ID         string
+	Type       string
+	Properties map[string]any
 
-type Edge struct {
-    ID         string
-    From       string
-    To         string
-    Type       string
-    Properties map[string]any
+	RecordedAt time.Time
+
+	ValidFrom  *time.Time
+	ValidUntil *time.Time
+
+	Telemetry *TelemetryRef
 }
 ```
 
-It also defines the storage interface used by the graph.
+```go
+type Edge struct {
+	ID         string
+	From       string
+	To         string
+	Type       string
+	Properties map[string]any
+
+	RecordedAt time.Time
+
+	ValidFrom  *time.Time
+	ValidUntil *time.Time
+
+	Telemetry *TelemetryRef
+}
+```
+
+The graph layer does not need to understand concepts such as:
+
+```text
+Observation
+Fact
+Decision
+Action
+```
+
+Those rules belong to the semantic layer.
+
+---
+
+## Storage Abstraction
+
+Persistence is defined through a storage interface.
 
 ```go
 type Store interface {
-    PutNode(ctx context.Context, node Node) error
-    GetNode(ctx context.Context, id string) (Node, error)
+	PutNode(ctx context.Context, node Node) error
+	GetNode(ctx context.Context, id string) (Node, error)
 
-    PutEdge(ctx context.Context, edge Edge) error
-    GetEdge(ctx context.Context, id string) (Edge, error)
+	PutEdge(ctx context.Context, edge Edge) error
+	GetEdge(ctx context.Context, id string) (Edge, error)
 
-    OutgoingEdges(ctx context.Context, nodeID string) ([]Edge, error)
-    IncomingEdges(ctx context.Context, nodeID string) ([]Edge, error)
+	OutgoingEdges(
+		ctx context.Context,
+		nodeID string,
+	) ([]Edge, error)
+
+	IncomingEdges(
+		ctx context.Context,
+		nodeID string,
+	) ([]Edge, error)
 }
 ```
 
-### `storage/memory`
+This keeps the graph independent from a specific database.
 
-Provides the current in-memory implementation of `graph.Store`.
+Current implementation:
 
-Internally it maintains:
+```text
+Graph
+  │
+  ▼
+Store Interface
+  ▲
+  │
+Memory Store
+```
+
+Future storage implementations may include:
+
+```text
+PostgreSQL
+Neo4j
+Embedded persistent stores
+Distributed graph stores
+```
+
+---
+
+## In-Memory Store
+
+The built-in in-memory store maintains:
 
 ```text
 nodes
 
-Node ID
-   ↓
+NodeID
+  ↓
 Node
 ```
 
 ```text
 edges
 
-Edge ID
-   ↓
+EdgeID
+  ↓
 Edge
 ```
 
-and indexes for efficient relationship lookup:
+and relationship indexes:
 
 ```text
 outgoing
 
-Node ID
-   ↓
-Outgoing Edge IDs
+NodeID
+  ↓
+Edge IDs
 ```
 
 ```text
 incoming
 
-Node ID
-   ↓
-Incoming Edge IDs
+NodeID
+  ↓
+Edge IDs
 ```
+
+The indexes allow traversal without scanning every edge.
+
+The memory store uses:
+
+```go
+sync.RWMutex
+```
+
+for concurrent access.
 
 ---
 
-## Basic Usage
+## Graph Traversal
 
-Create an in-memory store:
+The graph engine currently supports:
 
-```go
-store := memory.New()
-```
+- Breadth-First Search
+- Depth-First Search
+- Incoming traversal
+- Outgoing traversal
+- Maximum depth
+- Cycle protection
+- Parent tracking
+- Edge tracking
+- Deterministic ordering
 
-Create a graph using that store:
-
-```go
-g, err := graph.New(store)
-if err != nil {
-    panic(err)
-}
-```
-
-Create a context:
+Example:
 
 ```go
-ctx := context.Background()
-```
-
-Add an observation:
-
-```go
-observation := graph.Node{
-    ID:   "observation-001",
-    Type: "Observation",
-    Properties: map[string]any{
-        "metric": "cpu_usage",
-        "value":  94,
-    },
-}
-
-if err := g.AddNode(ctx, observation); err != nil {
-    panic(err)
-}
-```
-
-Add a fact:
-
-```go
-fact := graph.Node{
-    ID:   "fact-001",
-    Type: "Fact",
-    Properties: map[string]any{
-        "statement": "CPU usage is high",
-    },
-}
-
-if err := g.AddNode(ctx, fact); err != nil {
-    panic(err)
-}
-```
-
-Connect them:
-
-```go
-edge := graph.Edge{
-    ID:   "edge-001",
-    From: observation.ID,
-    To:   fact.ID,
-    Type: "SUPPORTS",
-}
-
-if err := g.AddEdge(ctx, edge); err != nil {
-    panic(err)
-}
-```
-
-The resulting graph is:
-
-```text
-Observation
-CPU Usage = 94%
-      │
-      │ SUPPORTS
-      ▼
-Fact
-CPU Usage Is High
-```
-
-Outgoing neighbors can then be retrieved with:
-
-```go
-neighbors, err := g.OutgoingNeighbors(
-    ctx,
-    observation.ID,
+visits, err := g.BFS(
+	ctx,
+	"action-001",
+	graph.DirectionIncoming,
+	4,
 )
 ```
 
----
-
-## Why a Storage Interface?
-
-The graph should not need to know whether its data is stored in:
-
-* Go memory
-* PostgreSQL
-* Neo4j
-* SQLite
-* another graph database
-
-Instead, the graph only depends on the `Store` abstraction.
+Given:
 
 ```text
-Graph
-  │
-  ▼
-Store
+Source
+  ↓
+Observation
+  ↓
+Fact
+  ↓
+Decision
+  ↓
+Action
 ```
 
-A storage implementation is responsible for satisfying that interface.
+incoming traversal returns:
+
+```text
+Action        depth 0
+Decision      depth 1
+Fact          depth 2
+Observation   depth 3
+Source        depth 4
+```
+
+Each traversal result contains additional information:
+
+```go
+type Visit struct {
+	Node Node
+
+	Depth int
+
+	ParentNodeID string
+	ViaEdgeID    string
+}
+```
+
+This preserves information about how each node was reached.
+
+---
+
+## Semantic Relationships
+
+The semantic layer currently defines four causal relationships.
+
+### PRODUCED
+
+```text
+Source
+  │
+  │ PRODUCED
+  ▼
+Observation
+```
+
+### SUPPORTS
+
+```text
+Observation
+  │
+  │ SUPPORTS
+  ▼
+Fact
+```
+
+### BASIS_OF
+
+```text
+Fact
+  │
+  │ BASIS_OF
+  ▼
+Decision
+```
+
+### CAUSED
+
+```text
+Decision
+  │
+  │ CAUSED
+  ▼
+Action
+```
+
+The full causal flow is:
+
+```text
+Source
+  │
+  ▼
+Observation
+  │
+  ▼
+Fact
+  │
+  ▼
+Decision
+  │
+  ▼
+Action
+```
+
+The semantic layer validates these relationships before storing them.
 
 For example:
 
 ```text
-MemoryStore
-    │
-    └── implements graph.Store
+Observation ──SUPPORTS──> Fact
 ```
 
-This makes it possible to add new persistence implementations without changing higher-level graph logic.
+is valid.
 
----
-
-## Concurrency
-
-The in-memory store uses `sync.RWMutex` to support concurrent access.
-
-This is important because AI agent systems may have many executions writing observations, decisions, and actions concurrently.
-
-Conceptually:
+But:
 
 ```text
-Agent A ──┐
-Agent B ──┼──> ai-trace-cause
-Agent C ──┘
+Fact ──SUPPORTS──> Action
 ```
 
-Read operations use a read lock, while write operations use an exclusive lock.
-
-The project can be tested for race conditions with:
-
-```bash
-go test -race ./...
-```
+is rejected by the semantic layer.
 
 ---
 
-## Development
+## Trace Why an Action Happened
 
-Run all tests:
+The primary causal tracing API is:
 
-```bash
-go test ./...
+```go
+visits, err := trace.TraceActionCause(
+	ctx,
+	actionID,
+	4,
+)
 ```
 
-Run tests with the Go race detector:
-
-```bash
-go test -race ./...
-```
-
----
-
-## Roadmap
-
-The current development plan is:
-
-```text
-Step 1  Graph Core
-   ↓
-Step 2  Storage Abstraction        ← current
-   ↓
-Step 3  Graph Traversal
-   ↓
-Step 4  Observation / Fact
-   ↓
-Step 5  Decision Graph
-   ↓
-Step 6  Action & Causal Trace
-   ↓
-Step 7  Provenance
-   ↓
-Step 8  Temporal Context
-   ↓
-Step 9  OpenTelemetry Integration
-   ↓
-Step 10 Agent SDK
-```
-
-### Upcoming: Graph Traversal
-
-The next major feature will introduce graph traversal such as BFS and DFS.
-
-This will eventually allow causal chains such as:
+The traversal starts from the action and follows incoming causal relationships.
 
 ```text
 Action
@@ -499,37 +812,598 @@ Observation
 Source
 ```
 
-to be traced programmatically.
+This allows applications to reconstruct the evidence chain behind an action.
 
 ---
 
-## Design Principle
+## Temporal Context
 
-`ai-trace-cause` is not intended to become another LLM framework.
+AI decisions often need to be explained using the information available **at the time the decision was made**.
 
-The goal is to remain provider-agnostic infrastructure that can be added to existing AI applications.
-
-For example:
+`ai-trace-cause` therefore distinguishes between:
 
 ```text
-Your AI Application
-        │
-        ├── OpenAI
-        ├── Anthropic
-        ├── Gemini
-        ├── MCP
-        └── Custom Tools
-                │
-                ▼
-         ai-trace-cause
-                │
-                ▼
-          Causal Graph
+RecordedAt
 ```
 
-The AI application performs the work.
+and:
 
-`ai-trace-cause` records the relationships needed to explain **why** that work happened.
+```text
+ValidFrom
+ValidUntil
+```
+
+### RecordedAt
+
+Represents when the information became known to `ai-trace-cause`.
+
+Example:
+
+```text
+09:00
+Subscription actually expired.
+
+09:05
+The agent discovered that the subscription expired.
+```
+
+The fact may have:
+
+```text
+ValidFrom  = 09:00
+RecordedAt = 09:05
+```
+
+At `09:03`, the fact was true in the external world, but the agent did not know it yet.
+
+### Validity
+
+Validity uses a half-open interval:
+
+```text
+[ValidFrom, ValidUntil)
+```
+
+which means:
+
+```text
+ValidFrom <= t < ValidUntil
+```
+
+---
+
+## Temporal Traversal
+
+The graph can reconstruct causal context at a particular time.
+
+Graph-level API:
+
+```go
+visits, err := g.BFSAt(
+	ctx,
+	"decision-001",
+	graph.DirectionIncoming,
+	3,
+	at,
+)
+```
+
+SDK-level API:
+
+```go
+visits, err := trace.TraceActionCauseAt(
+	ctx,
+	action.ID,
+	at,
+	4,
+)
+```
+
+This allows applications to answer:
+
+> Why did the agent perform this action based on what it knew at that time?
+
+---
+
+## OpenTelemetry Integration
+
+`ai-trace-cause` is not a replacement for OpenTelemetry.
+
+The two systems answer different questions.
+
+```text
+OpenTelemetry                 ai-trace-cause
+────────────────────          ────────────────────
+
+HOW did it execute?           WHY did it happen?
+
+Which service?                Which observation?
+Which span?                   Which fact?
+How long?                     Which decision?
+Which error?                  Which source?
+Which tool call?              Why this action?
+```
+
+The two systems can be correlated through:
+
+```text
+TraceID
+SpanID
+```
+
+---
+
+## Using OpenTelemetry
+
+Add the OpenTelemetry dependency:
+
+```bash
+go get go.opentelemetry.io/otel
+```
+
+Create the adapter:
+
+```go
+hook := oteltelemetry.New()
+```
+
+Then configure `ai-trace-cause`:
+
+```go
+trace, err := aitracecause.New(
+	aitracecause.WithTelemetryHook(
+		hook,
+	),
+)
+```
+
+If the supplied `context.Context` contains an active OpenTelemetry `SpanContext`, the corresponding semantic node or edge automatically records:
+
+```text
+TraceID
+SpanID
+```
+
+---
+
+## OpenTelemetry Example
+
+Assume an application already has a span:
+
+```go
+ctx, span := tracer.Start(
+	ctx,
+	"agent.run",
+)
+defer span.End()
+```
+
+Use the same context when recording a decision:
+
+```go
+err := trace.RecordDecision(
+	ctx,
+	aitracecause.Decision{
+		ID:         "decision-001",
+		Outcome:    "Scale the service",
+		Rationale:  "CPU utilization is too high",
+		Confidence: 0.92,
+	},
+)
+```
+
+Internally, the Decision may become correlated with:
+
+```text
+Decision
+├── TraceID
+└── SpanID
+```
+
+The application does not need to pass those IDs manually.
+
+`ai-trace-cause` reads the active trace context but does not own or terminate application spans.
+
+---
+
+## HOW and WHY Together
+
+An AI agent execution may look like:
+
+```text
+OpenTelemetry
+
+Trace abc123
+
+agent.run
+├── metrics.fetch
+├── llm.decide
+└── tool.scale-service
+```
+
+The corresponding semantic trace may look like:
+
+```text
+ai-trace-cause
+
+Observation
+TraceID = abc123
+SpanID  = metrics.fetch
+      │
+      ▼
+Fact
+TraceID = abc123
+SpanID  = llm.decide
+      │
+      ▼
+Decision
+TraceID = abc123
+SpanID  = llm.decide
+      │
+      ▼
+Action
+TraceID = abc123
+SpanID  = tool.scale-service
+```
+
+Together:
+
+```text
+Operational Trace
+       +
+Causal Trace
+       =
+Explainable Agent Execution
+```
+
+---
+
+## Provider Agnostic by Design
+
+The core library does not call an LLM.
+
+It does not require:
+
+```text
+OpenAI
+Anthropic
+Gemini
+Ollama
+LangChain
+MCP
+```
+
+The intended architecture is:
+
+```text
+AI Application
+      │
+      │ OpenAI / Anthropic / Gemini / Custom Agent
+      ▼
+
+ai-trace-cause
+      │
+      ▼
+
+Semantic / Causal Graph
+```
+
+The application decides which events represent:
+
+```text
+Source
+Observation
+Fact
+Decision
+Action
+```
+
+and records those relationships through the SDK.
+
+Provider-specific integrations can be added independently without coupling the core runtime to a particular AI provider.
+
+---
+
+## Why Not Store Everything in OpenTelemetry Spans?
+
+Operational execution structure and semantic causality are not always the same graph.
+
+An OpenTelemetry trace may look like:
+
+```text
+agent.run
+├── retrieve
+├── model.generate
+└── tool.call
+```
+
+But semantic causality might look like:
+
+```text
+Source A ───> Observation A ───┐
+                               │
+                               ▼
+                              Fact A ───┐
+                                        │
+Source B ───> Observation B ───> Fact B ─┼──> Decision
+                                        │
+                              Fact C ───┘
+                                        │
+                                        ▼
+                                      Action
+```
+
+These structures serve different purposes.
+
+`ai-trace-cause` preserves the semantic graph independently while allowing it to be correlated with operational telemetry.
+
+---
+
+## Configuration
+
+### Default Memory Store
+
+The simplest setup is:
+
+```go
+trace, err := aitracecause.New()
+```
+
+The default configuration uses the built-in memory store.
+
+Equivalent explicit configuration:
+
+```go
+trace, err := aitracecause.New(
+	aitracecause.WithMemoryStore(),
+)
+```
+
+### Custom Store
+
+Custom storage implementations can satisfy the `graph.Store` interface.
+
+```go
+trace, err := aitracecause.New(
+	aitracecause.WithStore(customStore),
+)
+```
+
+This allows the public SDK to remain unchanged when adding future database backends.
+
+### Custom Clock
+
+A clock can be injected for deterministic testing.
+
+```go
+trace, err := aitracecause.New(
+	aitracecause.WithClock(
+		func() time.Time {
+			return fixedTime
+		},
+	),
+)
+```
+
+### Telemetry Hook
+
+Optional telemetry correlation can be configured through:
+
+```go
+trace, err := aitracecause.New(
+	aitracecause.WithTelemetryHook(hook),
+)
+```
+
+The core SDK remains independent from a specific telemetry provider.
+
+---
+
+## Concurrency
+
+The current in-memory backend uses:
+
+```go
+sync.RWMutex
+```
+
+to protect graph state.
+
+This allows multiple agent executions to concurrently record and inspect graph data.
+
+Run Go's race detector during development:
+
+```bash
+go test -race ./...
+```
+
+---
+
+## Testing
+
+Run all tests:
+
+```bash
+go test ./...
+```
+
+Run all tests with race detection:
+
+```bash
+go test -race ./...
+```
+
+Package-specific tests:
+
+```bash
+go test ./graph/...
+go test ./semantic/...
+go test ./storage/...
+go test ./telemetry/...
+```
+
+---
+
+## Future Direction
+
+### Persistent Storage
+
+Possible storage implementations:
+
+```text
+PostgreSQL
+Neo4j
+Embedded databases
+Distributed graph stores
+```
+
+### AI Provider Integrations
+
+Possible adapters:
+
+```text
+OpenAI
+Anthropic
+Gemini
+Local models
+Custom agent runtimes
+```
+
+The core will remain provider independent.
+
+### Automatic Tool Tracing
+
+Future integrations may capture:
+
+```text
+Tool request
+Tool response
+Tool failure
+Retry
+```
+
+and connect them automatically to semantic actions.
+
+### Automatic LLM Tracing
+
+Provider integrations may capture:
+
+```text
+Model request
+Model response
+Usage metadata
+Latency
+Model name
+```
+
+while allowing applications to explicitly define semantic decisions and evidence.
+
+### Advanced Causal Queries
+
+Possible APIs:
+
+```go
+trace.ExplainAction(...)
+trace.TraceDecision(...)
+trace.FindSources(...)
+trace.FindInfluences(...)
+trace.FindConsequences(...)
+```
+
+### Distributed Causal Tracing
+
+OpenTelemetry context can eventually help correlate causal graph entities across:
+
+```text
+Agent Service
+    │
+    │ HTTP / gRPC
+    ▼
+Tool Service
+    │
+    ▼
+Another Agent
+```
+
+### Visualization
+
+Future visualization could represent graphs such as:
+
+```text
+Source A ──> Observation A ──> Fact A ──┐
+                                        │
+Source B ──> Observation B ──> Fact B ──┼──> Decision ──> Action
+                                        │
+Source C ──> Observation C ──> Fact C ──┘
+```
+
+---
+
+## Design Principles
+
+### Keep the graph generic
+
+The graph package should not know what an AI agent, fact, decision, or action is.
+
+### Keep semantic rules explicit
+
+Relationships such as:
+
+```text
+Observation → Fact
+Fact → Decision
+Decision → Action
+```
+
+belong to the semantic layer.
+
+### Keep the public API small
+
+Applications should primarily interact with:
+
+```go
+aitracecause.New()
+```
+
+and the resulting `Trace` SDK.
+
+Internal graph and storage concepts should remain optional for advanced users.
+
+### Keep providers optional
+
+The core must not require a specific AI provider SDK.
+
+### Keep storage replaceable
+
+The graph engine must not depend on a particular persistence implementation.
+
+### Keep telemetry optional
+
+Applications should be able to use `ai-trace-cause` with or without OpenTelemetry.
+
+### Preserve causality
+
+The system should make it possible to trace:
+
+```text
+Action
+  ↑
+Decision
+  ↑
+Fact
+  ↑
+Observation
+  ↑
+Source
+```
+
+### Preserve historical context
+
+An explanation should reflect what the agent knew when the decision was made, not only what is known now.
+
+### Preserve operational correlation
+
+Semantic entities should be correlatable with the execution traces that created them.
 
 ---
 
@@ -537,10 +1411,19 @@ The AI application performs the work.
 
 Operational observability answers:
 
-> How did the agent execute?
+> **How did the agent execute?**
 
 `ai-trace-cause` aims to answer:
 
-> Why did the agent make that decision?
+> **Why did the agent make that decision and perform that action?**
 
-The long-term goal is to complement traditional observability systems with semantic and causal traces for AI agents.
+Together with OpenTelemetry, the goal is to provide a foundation for AI agent systems that are:
+
+```text
+Observable
+Traceable
+Auditable
+Explainable
+```
+
+without coupling the core runtime to a specific AI provider, storage engine, or observability backend.
