@@ -65,16 +65,17 @@ func TestDecisionCapturesOTelContext(
 		Confidence: 0.92,
 	}
 
-	if err := service.RecordDecision(
+	recorded, err := service.RecordDecision(
 		ctx,
 		decision,
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	node, err := g.GetNode(
 		ctx,
-		decision.ID,
+		recorded.ID,
 	)
 	if err != nil {
 		t.Fatal(err)

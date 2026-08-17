@@ -4,9 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/karosia/ai-trace-cause/graph"
 	"github.com/karosia/ai-trace-cause/semantic"
-	"github.com/karosia/ai-trace-cause/storage/memory"
 )
 
 func TestActionCauseStoryWithProvenance(
@@ -14,93 +12,83 @@ func TestActionCauseStoryWithProvenance(
 ) {
 	ctx := context.Background()
 
-	store := memory.New()
+	trace, _ := newTestService(
+		t,
+		"edge-produced",
+		"edge-supports",
+		"edge-basis",
+		"edge-caused",
+	)
 
-	g, err := graph.New(store)
+	source, err := trace.RecordSource(
+		ctx,
+		semantic.Source{
+			ID:   "source-001",
+			Kind: "Prometheus",
+			URI:  "prometheus://production/cpu_usage",
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	trace, err := semantic.NewService(g)
+	observation, err := trace.RecordObservation(
+		ctx,
+		semantic.Observation{
+			ID:    "observation-001",
+			Name:  "cpu_usage",
+			Value: 94,
+			Metadata: map[string]any{
+				"unit": "%",
+			},
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	source := semantic.Source{
-		ID:   "source-001",
-		Kind: "Prometheus",
-		URI:  "prometheus://production/cpu_usage",
-	}
-
-	observation := semantic.Observation{
-		ID:    "observation-001",
-		Name:  "cpu_usage",
-		Value: 94,
-		Metadata: map[string]any{
-			"unit": "%",
+	fact, err := trace.RecordFact(
+		ctx,
+		semantic.Fact{
+			ID:         "fact-001",
+			Statement:  "CPU usage is high",
+			Confidence: 0.98,
 		},
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	fact := semantic.Fact{
-		ID:         "fact-001",
-		Statement:  "CPU usage is high",
-		Confidence: 0.98,
-	}
-
-	decision := semantic.Decision{
-		ID:         "decision-001",
-		Outcome:    "Scale the service",
-		Rationale:  "CPU utilization is consistently above 90%",
-		Confidence: 0.92,
-	}
-
-	action := semantic.Action{
-		ID:     "action-001",
-		Name:   "scale_service",
-		Target: "payments-api",
-		Parameters: map[string]any{
-			"replicas": 5,
+	decision, err := trace.RecordDecision(
+		ctx,
+		semantic.Decision{
+			ID:         "decision-001",
+			Outcome:    "Scale the service",
+			Rationale:  "CPU utilization is consistently above 90%",
+			Confidence: 0.92,
 		},
-	}
-
-	if err := trace.RecordSource(
-		ctx,
-		source,
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := trace.RecordObservation(
+	action, err := trace.RecordAction(
 		ctx,
-		observation,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := trace.RecordFact(
-		ctx,
-		fact,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := trace.RecordDecision(
-		ctx,
-		decision,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := trace.RecordAction(
-		ctx,
-		action,
-	); err != nil {
+		semantic.Action{
+			ID:     "action-001",
+			Name:   "scale_service",
+			Target: "payments-api",
+			Parameters: map[string]any{
+				"replicas": 5,
+			},
+		},
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 
 	if err := trace.Produced(
 		ctx,
-		"edge-produced",
 		source.ID,
 		observation.ID,
 	); err != nil {
@@ -109,7 +97,6 @@ func TestActionCauseStoryWithProvenance(
 
 	if err := trace.Supports(
 		ctx,
-		"edge-supports",
 		observation.ID,
 		fact.ID,
 	); err != nil {
@@ -118,7 +105,6 @@ func TestActionCauseStoryWithProvenance(
 
 	if err := trace.BasisOf(
 		ctx,
-		"edge-basis",
 		fact.ID,
 		decision.ID,
 	); err != nil {
@@ -127,7 +113,6 @@ func TestActionCauseStoryWithProvenance(
 
 	if err := trace.Caused(
 		ctx,
-		"edge-caused",
 		decision.ID,
 		action.ID,
 	); err != nil {

@@ -20,3 +20,5 @@ type Validity = semantic.Validity
 type Visit = graph.Visit
 
 type TelemetryHook = semantic.TelemetryHook
+
+type IDGenerator = semantic.IDGenerator

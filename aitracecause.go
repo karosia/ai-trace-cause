@@ -32,7 +32,7 @@ func New(
 	semanticOptions := make(
 		[]semantic.Option,
 		0,
-		2,
+		3,
 	)
 
 	if cfg.clock != nil {
@@ -47,6 +47,15 @@ func New(
 			semanticOptions,
 			semantic.WithTelemetryHook(
 				cfg.telemetry,
+			),
+		)
+	}
+
+	if cfg.idGenerator != nil {
+		semanticOptions = append(
+			semanticOptions,
+			semantic.WithIDGenerator(
+				cfg.idGenerator,
 			),
 		)
 	}
@@ -68,7 +77,7 @@ func New(
 func (t *Trace) RecordSource(
 	ctx context.Context,
 	source Source,
-) error {
+) (Source, error) {
 	return t.semantic.RecordSource(
 		ctx,
 		source,
@@ -78,7 +87,7 @@ func (t *Trace) RecordSource(
 func (t *Trace) RecordObservation(
 	ctx context.Context,
 	observation Observation,
-) error {
+) (Observation, error) {
 	return t.semantic.RecordObservation(
 		ctx,
 		observation,
@@ -88,7 +97,7 @@ func (t *Trace) RecordObservation(
 func (t *Trace) RecordFact(
 	ctx context.Context,
 	fact Fact,
-) error {
+) (Fact, error) {
 	return t.semantic.RecordFact(
 		ctx,
 		fact,
@@ -98,7 +107,7 @@ func (t *Trace) RecordFact(
 func (t *Trace) RecordDecision(
 	ctx context.Context,
 	decision Decision,
-) error {
+) (Decision, error) {
 	return t.semantic.RecordDecision(
 		ctx,
 		decision,
@@ -108,7 +117,7 @@ func (t *Trace) RecordDecision(
 func (t *Trace) RecordAction(
 	ctx context.Context,
 	action Action,
-) error {
+) (Action, error) {
 	return t.semantic.RecordAction(
 		ctx,
 		action,
@@ -117,13 +126,11 @@ func (t *Trace) RecordAction(
 
 func (t *Trace) Produced(
 	ctx context.Context,
-	edgeID string,
 	sourceID string,
 	observationID string,
 ) error {
 	return t.semantic.Produced(
 		ctx,
-		edgeID,
 		sourceID,
 		observationID,
 	)
@@ -131,13 +138,11 @@ func (t *Trace) Produced(
 
 func (t *Trace) Supports(
 	ctx context.Context,
-	edgeID string,
 	observationID string,
 	factID string,
 ) error {
 	return t.semantic.Supports(
 		ctx,
-		edgeID,
 		observationID,
 		factID,
 	)
@@ -145,13 +150,11 @@ func (t *Trace) Supports(
 
 func (t *Trace) BasisOf(
 	ctx context.Context,
-	edgeID string,
 	factID string,
 	decisionID string,
 ) error {
 	return t.semantic.BasisOf(
 		ctx,
-		edgeID,
 		factID,
 		decisionID,
 	)
@@ -159,13 +162,11 @@ func (t *Trace) BasisOf(
 
 func (t *Trace) Caused(
 	ctx context.Context,
-	edgeID string,
 	decisionID string,
 	actionID string,
 ) error {
 	return t.semantic.Caused(
 		ctx,
-		edgeID,
 		decisionID,
 		actionID,
 	)

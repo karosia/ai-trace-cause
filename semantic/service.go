@@ -13,6 +13,8 @@ type Service struct {
 	now func() time.Time
 
 	telemetry TelemetryHook
+
+	idGenerator IDGenerator
 }
 
 type Option func(*Service)
@@ -32,6 +34,16 @@ func WithTelemetryHook(
 ) Option {
 	return func(service *Service) {
 		service.telemetry = hook
+	}
+}
+
+func WithIDGenerator(
+	generator IDGenerator,
+) Option {
+	return func(service *Service) {
+		if generator != nil {
+			service.idGenerator = generator
+		}
 	}
 }
 
@@ -60,14 +72,19 @@ func NewService(
 func (s *Service) RecordSource(
 	ctx context.Context,
 	source Source,
-) error {
-	if source.ID == "" {
-		return ErrEmptySourceID
+) (Source, error) {
+	if source.Kind == "" {
+		return Source{}, ErrEmptySourceKind
 	}
 
-	if source.Kind == "" {
-		return ErrEmptySourceKind
+	id, err := s.resolveID(
+		source.ID,
+	)
+	if err != nil {
+		return Source{}, err
 	}
+
+	source.ID = id
 
 	node := graph.Node{
 		ID:   source.ID,
@@ -94,20 +111,32 @@ func (s *Service) RecordSource(
 		&node,
 	)
 
-	return s.graph.AddNode(
+	if err := s.graph.AddNode(
 		ctx,
 		node,
-	)
+	); err != nil {
+		return Source{}, err
+	}
+
+	return source, nil
 }
 
-func (s *Service) RecordObservation(ctx context.Context, observation Observation) error {
-	if observation.ID == "" {
-		return ErrEmptyObservationID
+func (s *Service) RecordObservation(
+	ctx context.Context,
+	observation Observation,
+) (Observation, error) {
+	if observation.Name == "" {
+		return Observation{}, ErrEmptyObservationName
 	}
 
-	if observation.Name == "" {
-		return ErrEmptyObservationName
+	id, err := s.resolveID(
+		observation.ID,
+	)
+	if err != nil {
+		return Observation{}, err
 	}
+
+	observation.ID = id
 
 	node := graph.Node{
 		ID:   observation.ID,
@@ -119,7 +148,9 @@ func (s *Service) RecordObservation(ctx context.Context, observation Observation
 	}
 
 	if observation.Metadata != nil {
-		node.Properties["metadata"] = cloneMap(observation.Metadata)
+		node.Properties["metadata"] = cloneMap(
+			observation.Metadata,
+		)
 	}
 
 	s.applyTemporal(
@@ -132,21 +163,37 @@ func (s *Service) RecordObservation(ctx context.Context, observation Observation
 		&node,
 	)
 
-	return s.graph.AddNode(ctx, node)
+	if err := s.graph.AddNode(
+		ctx,
+		node,
+	); err != nil {
+		return Observation{}, err
+	}
+
+	return observation, nil
 }
 
-func (s *Service) RecordFact(ctx context.Context, fact Fact) error {
-	if fact.ID == "" {
-		return ErrEmptyFactID
-	}
-
+func (s *Service) RecordFact(
+	ctx context.Context,
+	fact Fact,
+) (Fact, error) {
 	if fact.Statement == "" {
-		return ErrEmptyFactStatement
+		return Fact{}, ErrEmptyFactStatement
 	}
 
-	if fact.Confidence < 0 || fact.Confidence > 1 {
-		return ErrInvalidConfidence
+	if fact.Confidence < 0 ||
+		fact.Confidence > 1 {
+		return Fact{}, ErrInvalidConfidence
 	}
+
+	id, err := s.resolveID(
+		fact.ID,
+	)
+	if err != nil {
+		return Fact{}, err
+	}
+
+	fact.ID = id
 
 	node := graph.Node{
 		ID:   fact.ID,
@@ -158,7 +205,9 @@ func (s *Service) RecordFact(ctx context.Context, fact Fact) error {
 	}
 
 	if fact.Metadata != nil {
-		node.Properties["metadata"] = cloneMap(fact.Metadata)
+		node.Properties["metadata"] = cloneMap(
+			fact.Metadata,
+		)
 	}
 
 	s.applyTemporal(
@@ -171,25 +220,36 @@ func (s *Service) RecordFact(ctx context.Context, fact Fact) error {
 		&node,
 	)
 
-	return s.graph.AddNode(ctx, node)
-}
+	if err := s.graph.AddNode(
+		ctx,
+		node,
+	); err != nil {
+		return Fact{}, err
+	}
 
+	return fact, nil
+}
 func (s *Service) RecordDecision(
 	ctx context.Context,
 	decision Decision,
-) error {
-	if decision.ID == "" {
-		return ErrEmptyDecisionID
-	}
-
+) (Decision, error) {
 	if decision.Outcome == "" {
-		return ErrEmptyDecisionOutcome
+		return Decision{}, ErrEmptyDecisionOutcome
 	}
 
 	if decision.Confidence < 0 ||
 		decision.Confidence > 1 {
-		return ErrInvalidConfidence
+		return Decision{}, ErrInvalidConfidence
 	}
+
+	id, err := s.resolveID(
+		decision.ID,
+	)
+	if err != nil {
+		return Decision{}, err
+	}
+
+	decision.ID = id
 
 	node := graph.Node{
 		ID:   decision.ID,
@@ -217,23 +277,32 @@ func (s *Service) RecordDecision(
 		&node,
 	)
 
-	return s.graph.AddNode(
+	if err := s.graph.AddNode(
 		ctx,
 		node,
-	)
+	); err != nil {
+		return Decision{}, err
+	}
+
+	return decision, nil
 }
 
 func (s *Service) RecordAction(
 	ctx context.Context,
 	action Action,
-) error {
-	if action.ID == "" {
-		return ErrEmptyActionID
+) (Action, error) {
+	if action.Name == "" {
+		return Action{}, ErrEmptyActionName
 	}
 
-	if action.Name == "" {
-		return ErrEmptyActionName
+	id, err := s.resolveID(
+		action.ID,
+	)
+	if err != nil {
+		return Action{}, err
 	}
+
+	action.ID = id
 
 	node := graph.Node{
 		ID:   action.ID,
@@ -266,15 +335,18 @@ func (s *Service) RecordAction(
 		&node,
 	)
 
-	return s.graph.AddNode(
+	if err := s.graph.AddNode(
 		ctx,
 		node,
-	)
+	); err != nil {
+		return Action{}, err
+	}
+
+	return action, nil
 }
 
 func (s *Service) Produced(
 	ctx context.Context,
-	edgeID string,
 	sourceID string,
 	observationID string,
 ) error {
@@ -294,28 +366,16 @@ func (s *Service) Produced(
 		return err
 	}
 
-	edge := graph.Edge{
-		ID:         edgeID,
-		From:       sourceID,
-		To:         observationID,
-		Type:       string(RelationProduced),
-		RecordedAt: s.now().UTC(),
-	}
-
-	s.applyEdgeTelemetry(
+	return s.addRelation(
 		ctx,
-		&edge,
-	)
-
-	return s.graph.AddEdge(
-		ctx,
-		edge,
+		sourceID,
+		observationID,
+		RelationProduced,
 	)
 }
 
 func (s *Service) Supports(
 	ctx context.Context,
-	edgeID string,
 	observationID string,
 	factID string,
 ) error {
@@ -335,28 +395,16 @@ func (s *Service) Supports(
 		return err
 	}
 
-	edge := graph.Edge{
-		ID:         edgeID,
-		From:       observationID,
-		To:         factID,
-		Type:       string(RelationSupports),
-		RecordedAt: s.now().UTC(),
-	}
-
-	s.applyEdgeTelemetry(
+	return s.addRelation(
 		ctx,
-		&edge,
-	)
-
-	return s.graph.AddEdge(
-		ctx,
-		edge,
+		observationID,
+		factID,
+		RelationSupports,
 	)
 }
 
 func (s *Service) BasisOf(
 	ctx context.Context,
-	edgeID string,
 	factID string,
 	decisionID string,
 ) error {
@@ -376,28 +424,16 @@ func (s *Service) BasisOf(
 		return err
 	}
 
-	edge := graph.Edge{
-		ID:         edgeID,
-		From:       factID,
-		To:         decisionID,
-		Type:       string(RelationBasisOf),
-		RecordedAt: s.now().UTC(),
-	}
-
-	s.applyEdgeTelemetry(
+	return s.addRelation(
 		ctx,
-		&edge,
-	)
-
-	return s.graph.AddEdge(
-		ctx,
-		edge,
+		factID,
+		decisionID,
+		RelationBasisOf,
 	)
 }
 
 func (s *Service) Caused(
 	ctx context.Context,
-	edgeID string,
 	decisionID string,
 	actionID string,
 ) error {
@@ -417,22 +453,11 @@ func (s *Service) Caused(
 		return err
 	}
 
-	edge := graph.Edge{
-		ID:         edgeID,
-		From:       decisionID,
-		To:         actionID,
-		Type:       string(RelationCaused),
-		RecordedAt: s.now().UTC(),
-	}
-
-	s.applyEdgeTelemetry(
+	return s.addRelation(
 		ctx,
-		&edge,
-	)
-
-	return s.graph.AddEdge(
-		ctx,
-		edge,
+		decisionID,
+		actionID,
+		RelationCaused,
 	)
 }
 
@@ -573,7 +598,49 @@ func cloneTime(
 		return nil
 	}
 
-	cloned := *value
+	return new(*value)
+}
 
-	return &cloned
+func (s *Service) resolveID(
+	id string,
+) (string, error) {
+	if id != "" {
+		return id, nil
+	}
+
+	if s.idGenerator == nil {
+		return "", ErrIDGeneratorUnavailable
+	}
+
+	return s.idGenerator.NewID()
+}
+
+func (s *Service) addRelation(
+	ctx context.Context,
+	from string,
+	to string,
+	relation RelationType,
+) error {
+	edgeID, err := s.resolveID("")
+	if err != nil {
+		return err
+	}
+
+	edge := graph.Edge{
+		ID:         edgeID,
+		From:       from,
+		To:         to,
+		Type:       string(relation),
+		RecordedAt: s.now().UTC(),
+	}
+
+	s.applyEdgeTelemetry(
+		ctx,
+		&edge,
+	)
+
+	return s.graph.AddEdge(
+		ctx,
+		edge,
+	)
 }

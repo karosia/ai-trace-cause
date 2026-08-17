@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/karosia/ai-trace-cause/graph"
+	"github.com/karosia/ai-trace-cause/idgen/uuidv7"
 	"github.com/karosia/ai-trace-cause/semantic"
 	"github.com/karosia/ai-trace-cause/storage/memory"
 )
@@ -14,13 +15,16 @@ type config struct {
 	clock func() time.Time
 
 	telemetry semantic.TelemetryHook
+
+	idGenerator semantic.IDGenerator
 }
 
 type Option func(*config)
 
 func defaultConfig() *config {
 	return &config{
-		store: memory.New(),
+		store:       memory.New(),
+		idGenerator: uuidv7.New(),
 	}
 }
 
@@ -55,5 +59,15 @@ func WithTelemetryHook(
 ) Option {
 	return func(cfg *config) {
 		cfg.telemetry = hook
+	}
+}
+
+func WithIDGenerator(
+	generator IDGenerator,
+) Option {
+	return func(cfg *config) {
+		if generator != nil {
+			cfg.idGenerator = generator
+		}
 	}
 }

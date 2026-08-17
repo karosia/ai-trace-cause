@@ -8,29 +8,16 @@ import (
 var (
 	ErrNilGraph = errors.New("graph cannot be nil")
 
-	ErrEmptyObservationID = errors.New(
-		"observation ID cannot be empty",
-	)
 	ErrEmptyObservationName = errors.New(
 		"observation name cannot be empty",
 	)
 
-	ErrEmptyFactID = errors.New(
-		"fact ID cannot be empty",
-	)
 	ErrEmptyFactStatement = errors.New(
 		"fact statement cannot be empty",
 	)
 
-	ErrEmptyDecisionID = errors.New(
-		"decision ID cannot be empty",
-	)
 	ErrEmptyDecisionOutcome = errors.New(
 		"decision outcome cannot be empty",
-	)
-
-	ErrEmptyActionID = errors.New(
-		"action ID cannot be empty",
 	)
 	ErrEmptyActionName = errors.New(
 		"action name cannot be empty",
@@ -44,12 +31,12 @@ var (
 		"unexpected node type",
 	)
 
-	ErrEmptySourceID = errors.New(
-		"source ID cannot be empty",
-	)
-
 	ErrEmptySourceKind = errors.New(
 		"source kind cannot be empty",
+	)
+
+	ErrIDGeneratorUnavailable = errors.New(
+		"ID generator is not configured",
 	)
 )
 
