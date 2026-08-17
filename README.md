@@ -727,4 +727,4 @@ go test ./idgen/...
 
 ## License
 
-Add the license used by this repository here.
+MIT License. See [LICENSE](LICENSE) for details.
