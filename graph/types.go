@@ -5,8 +5,8 @@ import "time"
 // TelemetryRef correlates a node or edge with the OpenTelemetry trace
 // and span that were active when it was recorded.
 type TelemetryRef struct {
-	TraceID string
-	SpanID  string
+	TraceID string `json:"traceId"`
+	SpanID  string `json:"spanId"`
 }
 
 // Node is a vertex in the graph, identified by a unique ID and typed
@@ -16,16 +16,16 @@ type TelemetryRef struct {
 // domain (either or both may be nil, meaning unbounded). Telemetry, if
 // set, correlates the node with an OpenTelemetry trace and span.
 type Node struct {
-	ID         string
-	Type       string
-	Properties map[string]any
+	ID         string         `json:"id"`
+	Type       string         `json:"type"`
+	Properties map[string]any `json:"properties,omitempty"`
 
-	RecordedAt time.Time
+	RecordedAt time.Time `json:"recordedAt"`
 
-	ValidFrom  *time.Time
-	ValidUntil *time.Time
+	ValidFrom  *time.Time `json:"validFrom,omitempty"`
+	ValidUntil *time.Time `json:"validUntil,omitempty"`
 
-	Telemetry *TelemetryRef
+	Telemetry *TelemetryRef `json:"telemetry,omitempty"`
 }
 
 // Edge is a directed, typed relationship from one node to another,
@@ -33,16 +33,16 @@ type Node struct {
 // RecordedAt, ValidFrom, ValidUntil, and Telemetry have the same
 // meaning as on Node.
 type Edge struct {
-	ID         string
-	From       string
-	To         string
-	Type       string
-	Properties map[string]any
+	ID         string         `json:"id"`
+	From       string         `json:"from"`
+	To         string         `json:"to"`
+	Type       string         `json:"type"`
+	Properties map[string]any `json:"properties,omitempty"`
 
-	RecordedAt time.Time
+	RecordedAt time.Time `json:"recordedAt"`
 
-	ValidFrom  *time.Time
-	ValidUntil *time.Time
+	ValidFrom  *time.Time `json:"validFrom,omitempty"`
+	ValidUntil *time.Time `json:"validUntil,omitempty"`
 
-	Telemetry *TelemetryRef
+	Telemetry *TelemetryRef `json:"telemetry,omitempty"`
 }

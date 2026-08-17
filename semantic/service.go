@@ -561,6 +561,35 @@ func (s *Service) TraceActionCauseAt(
 	)
 }
 
+// TraceSourceEffects walks forward from the Source identified by
+// sourceID through its downstream effects (Observation, Fact,
+// Decision, Action), up to maxDepth hops, and returns the visited
+// nodes in breadth-first order. It is the forward-tracing counterpart
+// to TraceActionCause: instead of asking "why did this action
+// happen?", it answers "what did this source go on to influence?". It
+// returns UnexpectedNodeTypeError if sourceID does not refer to a
+// Source node.
+func (s *Service) TraceSourceEffects(
+	ctx context.Context,
+	sourceID string,
+	maxDepth int,
+) ([]graph.Visit, error) {
+	if err := s.requireNodeType(
+		ctx,
+		sourceID,
+		NodeTypeSource,
+	); err != nil {
+		return nil, err
+	}
+
+	return s.graph.BFS(
+		ctx,
+		sourceID,
+		graph.DirectionOutgoing,
+		maxDepth,
+	)
+}
+
 func (s *Service) requireNodeType(ctx context.Context, nodeID string, expected NodeType) error {
 	node, err := s.graph.GetNode(ctx, nodeID)
 	if err != nil {

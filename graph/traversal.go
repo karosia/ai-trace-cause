@@ -23,12 +23,12 @@ const (
 // itself is visited at Depth 0 with an empty ParentNodeID and
 // ViaEdgeID.
 type Visit struct {
-	Node Node
+	Node Node `json:"node"`
 
-	Depth int
+	Depth int `json:"depth"`
 
-	ParentNodeID string
-	ViaEdgeID    string
+	ParentNodeID string `json:"parentNodeId,omitempty"`
+	ViaEdgeID    string `json:"viaEdgeId,omitempty"`
 }
 
 // BFS performs a breadth-first traversal starting at startID,

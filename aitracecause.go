@@ -243,3 +243,37 @@ func (t *Trace) TraceActionCauseAt(
 		maxDepth,
 	)
 }
+
+// TraceSourceEffects walks forward from the Source identified by
+// sourceID through its downstream effects (Observation, Fact,
+// Decision, Action), up to maxDepth hops, and returns the visited
+// nodes in breadth-first order. It is the forward-tracing counterpart
+// to TraceActionCause: instead of "why did this action happen?", it
+// answers "what did this source go on to influence?".
+func (t *Trace) TraceSourceEffects(
+	ctx context.Context,
+	sourceID string,
+	maxDepth int,
+) ([]Visit, error) {
+	return t.semantic.TraceSourceEffects(
+		ctx,
+		sourceID,
+		maxDepth,
+	)
+}
+
+// Explain walks backward from the Action identified by actionID, as
+// TraceActionCause does, and renders the resulting causal chain as a
+// human-readable narrative suitable for logging, debugging, or audit
+// output.
+func (t *Trace) Explain(
+	ctx context.Context,
+	actionID string,
+	maxDepth int,
+) (string, error) {
+	return t.semantic.Explain(
+		ctx,
+		actionID,
+		maxDepth,
+	)
+}

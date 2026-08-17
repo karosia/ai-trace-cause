@@ -36,41 +36,41 @@ const (
 // an API response, user input, a document, or a metrics system. Kind
 // must be non-empty.
 type Source struct {
-	ID string
+	ID string `json:"id,omitempty"`
 
-	Kind string
-	URI  string
+	Kind string `json:"kind"`
+	URI  string `json:"uri,omitempty"`
 
-	Metadata map[string]any
+	Metadata map[string]any `json:"metadata,omitempty"`
 
-	Validity Validity
+	Validity Validity `json:"validity,omitzero"`
 }
 
 // Observation represents something observed from an external Source.
 // Name must be non-empty.
 type Observation struct {
-	ID string
+	ID string `json:"id,omitempty"`
 
-	Name  string
-	Value any
+	Name  string `json:"name"`
+	Value any    `json:"value,omitempty"`
 
-	Metadata map[string]any
+	Metadata map[string]any `json:"metadata,omitempty"`
 
-	Validity Validity
+	Validity Validity `json:"validity,omitzero"`
 }
 
 // Fact represents information accepted as evidence for a Decision.
 // Statement must be non-empty and Confidence must be within [0, 1].
 type Fact struct {
-	ID string
+	ID string `json:"id,omitempty"`
 
-	Statement string
+	Statement string `json:"statement"`
 
-	Confidence float64
+	Confidence float64 `json:"confidence"`
 
-	Metadata map[string]any
+	Metadata map[string]any `json:"metadata,omitempty"`
 
-	Validity Validity
+	Validity Validity `json:"validity,omitzero"`
 }
 
 // Decision represents a selected outcome or judgment made by the
@@ -78,29 +78,29 @@ type Fact struct {
 // [0, 1]. Rationale is intended for concise, explicit justification
 // and is not intended to store private model chain-of-thought.
 type Decision struct {
-	ID string
+	ID string `json:"id,omitempty"`
 
-	Outcome    string
-	Rationale  string
-	Confidence float64
+	Outcome    string  `json:"outcome"`
+	Rationale  string  `json:"rationale,omitempty"`
+	Confidence float64 `json:"confidence"`
 
-	Metadata map[string]any
+	Metadata map[string]any `json:"metadata,omitempty"`
 
-	Validity Validity
+	Validity Validity `json:"validity,omitzero"`
 }
 
 // Action represents something the agent actually executed or
 // attempted to execute. Name must be non-empty.
 type Action struct {
-	ID string
+	ID string `json:"id,omitempty"`
 
-	Name   string
-	Target string
+	Name   string `json:"name"`
+	Target string `json:"target,omitempty"`
 
-	Parameters map[string]any
-	Metadata   map[string]any
+	Parameters map[string]any `json:"parameters,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
 
-	Validity Validity
+	Validity Validity `json:"validity,omitzero"`
 }
 
 // Validity describes the half-open interval [ValidFrom, ValidUntil)
@@ -108,6 +108,6 @@ type Action struct {
 // domain, as distinct from when it was recorded. Either or both
 // fields may be nil, meaning unbounded in that direction.
 type Validity struct {
-	ValidFrom  *time.Time
-	ValidUntil *time.Time
+	ValidFrom  *time.Time `json:"validFrom,omitempty"`
+	ValidUntil *time.Time `json:"validUntil,omitempty"`
 }

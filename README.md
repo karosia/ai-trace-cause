@@ -41,6 +41,8 @@ This makes it possible to answer questions such as:
 - Automatic UUIDv7 ID generation
 - Caller-provided IDs when external IDs already exist
 - Causal traversal from Action back to Source
+- Forward traversal from Source to the Actions it influenced
+- Human-readable causal explanations
 - Breadth-first and depth-first graph traversal
 - Cycle protection and maximum traversal depth
 - Temporal context with `RecordedAt`, `ValidFrom`, and `ValidUntil`
@@ -436,6 +438,53 @@ Observation
   ↑ PRODUCED
 Source
 ```
+
+### Tracing Forward
+
+Use `TraceSourceEffects` to walk forward from a source through everything it went on to influence.
+
+```go
+visits, err := trace.TraceSourceEffects(
+    ctx,
+    source.ID,
+    4,
+)
+```
+
+This is the mirror image of `TraceActionCause`: instead of asking "why did this action happen?", it answers "what did this source go on to influence?".
+
+```text
+Source
+  ↓ PRODUCED
+Observation
+  ↓ SUPPORTS
+Fact
+  ↓ BASIS_OF
+Decision
+  ↓ CAUSED
+Action
+```
+
+### Human-Readable Explanations
+
+Use `Explain` to render the causal chain behind an action as plain-English sentences instead of walking `[]Visit` by hand.
+
+```go
+explanation, err := trace.Explain(
+    ctx,
+    action.ID,
+    4,
+)
+```
+
+```text
+Action "scale_service" (target=payments-api) was caused by Decision "Scale the service".
+Decision "Scale the service" was based on Fact "CPU usage is high".
+Fact "CPU usage is high" was supported by Observation "cpu_usage" (value=94).
+Observation "cpu_usage" (value=94) was produced by Source "Prometheus" (prometheus://production/cpu_usage).
+```
+
+This is intended for logging, debugging, and audit output. For programmatic access to the chain itself, use `TraceActionCause`.
 
 ---
 
