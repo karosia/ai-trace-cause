@@ -6,13 +6,22 @@ import (
 	"sort"
 )
 
+// Direction selects which edges a traversal follows: outgoing edges
+// (Node.ID == Edge.From) or incoming edges (Node.ID == Edge.To).
 type Direction uint8
 
 const (
+	// DirectionOutgoing follows edges away from each visited node.
 	DirectionOutgoing Direction = iota + 1
+	// DirectionIncoming follows edges toward each visited node.
 	DirectionIncoming
 )
 
+// Visit is a single node reached during a traversal, along with the
+// depth (number of hops from the start node) at which it was found
+// and the parent node and edge it was reached through. The start node
+// itself is visited at Depth 0 with an empty ParentNodeID and
+// ViaEdgeID.
 type Visit struct {
 	Node Node
 
@@ -22,6 +31,12 @@ type Visit struct {
 	ViaEdgeID    string
 }
 
+// BFS performs a breadth-first traversal starting at startID,
+// following edges in direction up to maxDepth hops, and returns every
+// visited node in the order it was discovered. It returns
+// ErrInvalidMaxDepth if maxDepth is negative, ErrInvalidDirection if
+// direction is not recognized, or ErrNodeNotFound if startID does not
+// exist. Each node is visited at most once (cycle-safe).
 func (g *Graph) BFS(
 	ctx context.Context,
 	startID string,
@@ -125,6 +140,11 @@ func (g *Graph) BFS(
 	return results, nil
 }
 
+// DFS performs a depth-first traversal starting at startID, following
+// edges in direction up to maxDepth hops, and returns every visited
+// node in the order it was discovered. It returns the same errors as
+// BFS for invalid input. Each node is visited at most once
+// (cycle-safe).
 func (g *Graph) DFS(
 	ctx context.Context,
 	startID string,

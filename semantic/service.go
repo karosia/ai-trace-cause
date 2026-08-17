@@ -1,3 +1,7 @@
+// Package semantic implements the AI-agent causal domain model on top
+// of the graph package: the Source, Observation, Fact, Decision, and
+// Action entity types, the typed relationships that connect them, and
+// the Service that validates and records them.
 package semantic
 
 import (
@@ -7,6 +11,9 @@ import (
 	"github.com/karosia/ai-trace-cause/graph"
 )
 
+// Service validates and records the semantic causal model into an
+// underlying graph.Graph. It is the implementation behind the public
+// aitracecause.Trace type.
 type Service struct {
 	graph *graph.Graph
 
@@ -17,8 +24,12 @@ type Service struct {
 	idGenerator IDGenerator
 }
 
+// Option configures a Service created with NewService.
 type Option func(*Service)
 
+// WithClock configures the Service to use now instead of time.Now for
+// timestamping recorded entities and relationships. A nil now is
+// ignored.
 func WithClock(
 	now func() time.Time,
 ) Option {
@@ -29,6 +40,9 @@ func WithClock(
 	}
 }
 
+// WithTelemetryHook configures the Service to correlate recorded
+// entities and relationships with the active OpenTelemetry trace and
+// span found in the recording context, using hook.
 func WithTelemetryHook(
 	hook TelemetryHook,
 ) Option {
@@ -37,6 +51,9 @@ func WithTelemetryHook(
 	}
 }
 
+// WithIDGenerator configures the Service to use generator for
+// producing IDs when a caller does not supply one. A nil generator is
+// ignored.
 func WithIDGenerator(
 	generator IDGenerator,
 ) Option {
@@ -47,6 +64,8 @@ func WithIDGenerator(
 	}
 }
 
+// NewService creates a Service backed by graph g. It returns
+// ErrNilGraph if g is nil.
 func NewService(
 	g *graph.Graph,
 	options ...Option,
@@ -69,6 +88,9 @@ func NewService(
 	return service, nil
 }
 
+// RecordSource validates and records a Source node, generating an ID
+// if source.ID is empty. It returns ErrEmptySourceKind if Kind is
+// empty.
 func (s *Service) RecordSource(
 	ctx context.Context,
 	source Source,
@@ -121,6 +143,9 @@ func (s *Service) RecordSource(
 	return source, nil
 }
 
+// RecordObservation validates and records an Observation node,
+// generating an ID if observation.ID is empty. It returns
+// ErrEmptyObservationName if Name is empty.
 func (s *Service) RecordObservation(
 	ctx context.Context,
 	observation Observation,
@@ -173,6 +198,9 @@ func (s *Service) RecordObservation(
 	return observation, nil
 }
 
+// RecordFact validates and records a Fact node, generating an ID if
+// fact.ID is empty. It returns ErrEmptyFactStatement if Statement is
+// empty, or ErrInvalidConfidence if Confidence is outside [0, 1].
 func (s *Service) RecordFact(
 	ctx context.Context,
 	fact Fact,
@@ -229,6 +257,11 @@ func (s *Service) RecordFact(
 
 	return fact, nil
 }
+
+// RecordDecision validates and records a Decision node, generating an
+// ID if decision.ID is empty. It returns ErrEmptyDecisionOutcome if
+// Outcome is empty, or ErrInvalidConfidence if Confidence is outside
+// [0, 1].
 func (s *Service) RecordDecision(
 	ctx context.Context,
 	decision Decision,
@@ -287,6 +320,9 @@ func (s *Service) RecordDecision(
 	return decision, nil
 }
 
+// RecordAction validates and records an Action node, generating an ID
+// if action.ID is empty. It returns ErrEmptyActionName if Name is
+// empty.
 func (s *Service) RecordAction(
 	ctx context.Context,
 	action Action,
@@ -345,6 +381,9 @@ func (s *Service) RecordAction(
 	return action, nil
 }
 
+// Produced records a Source -> Observation RelationProduced
+// relationship. It returns UnexpectedNodeTypeError if either ID does
+// not refer to a node of the expected type.
 func (s *Service) Produced(
 	ctx context.Context,
 	sourceID string,
@@ -374,6 +413,9 @@ func (s *Service) Produced(
 	)
 }
 
+// Supports records an Observation -> Fact RelationSupports
+// relationship. It returns UnexpectedNodeTypeError if either ID does
+// not refer to a node of the expected type.
 func (s *Service) Supports(
 	ctx context.Context,
 	observationID string,
@@ -403,6 +445,9 @@ func (s *Service) Supports(
 	)
 }
 
+// BasisOf records a Fact -> Decision RelationBasisOf relationship. It
+// returns UnexpectedNodeTypeError if either ID does not refer to a
+// node of the expected type.
 func (s *Service) BasisOf(
 	ctx context.Context,
 	factID string,
@@ -432,6 +477,9 @@ func (s *Service) BasisOf(
 	)
 }
 
+// Caused records a Decision -> Action RelationCaused relationship. It
+// returns UnexpectedNodeTypeError if either ID does not refer to a
+// node of the expected type.
 func (s *Service) Caused(
 	ctx context.Context,
 	decisionID string,
@@ -461,6 +509,11 @@ func (s *Service) Caused(
 	)
 }
 
+// TraceActionCause walks backward from the Action identified by
+// actionID through its causal chain (Decision, Fact, Observation,
+// Source), up to maxDepth hops, and returns the visited nodes in
+// breadth-first order. It returns UnexpectedNodeTypeError if actionID
+// does not refer to an Action node.
 func (s *Service) TraceActionCause(
 	ctx context.Context,
 	actionID string,
@@ -482,6 +535,9 @@ func (s *Service) TraceActionCause(
 	)
 }
 
+// TraceActionCauseAt is like TraceActionCause but reconstructs the
+// causal chain as it existed at the given point in time, including
+// only entities and relationships that were recorded and valid at at.
 func (s *Service) TraceActionCauseAt(
 	ctx context.Context,
 	actionID string,

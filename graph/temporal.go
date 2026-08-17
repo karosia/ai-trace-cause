@@ -71,6 +71,11 @@ func validAt(
 	return true
 }
 
+// BFSAt is like BFS, but restricts the traversal to nodes and edges
+// that were recorded and valid at the given time at, reconstructing
+// the graph as it was known at that point in time. It returns
+// ErrNodeNotVisibleAt if the start node itself was not visible at at,
+// in addition to the errors BFS may return.
 func (g *Graph) BFSAt(
 	ctx context.Context,
 	startID string,

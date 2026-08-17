@@ -1,3 +1,14 @@
+// Package aitracecause provides causal tracing for AI agents.
+//
+// It records why an AI agent made a decision or performed an action by
+// connecting a chain of semantic entities — Source, Observation, Fact,
+// Decision, and Action — through typed causal relationships. This
+// complements operational observability systems such as OpenTelemetry,
+// which answer how an agent executed, by answering why it acted.
+//
+// The zero-value entry point is Trace, created with New. See the
+// semantic and graph subpackages for the underlying domain model and
+// graph engine, respectively.
 package aitracecause
 
 import (
@@ -8,11 +19,22 @@ import (
 	"github.com/karosia/ai-trace-cause/semantic"
 )
 
+// Trace is the public entry point for recording and querying an AI
+// agent's causal graph. It wraps a graph.Graph for storage and a
+// semantic.Service for validating and recording the semantic model.
+//
+// A Trace is safe for concurrent use as long as the underlying
+// graph.Store is safe for concurrent use.
 type Trace struct {
 	graph    *graph.Graph
 	semantic *semantic.Service
 }
 
+// New creates a Trace configured with the given Options.
+//
+// With no options, New uses a concurrent-safe in-memory store and a
+// UUIDv7 ID generator. Use WithStore, WithMemoryStore, WithClock,
+// WithTelemetryHook, and WithIDGenerator to customize behavior.
 func New(
 	options ...Option,
 ) (*Trace, error) {
@@ -74,6 +96,8 @@ func New(
 	}, nil
 }
 
+// RecordSource records where a piece of information originated, such
+// as an API response, a document, a database, or another agent.
 func (t *Trace) RecordSource(
 	ctx context.Context,
 	source Source,
@@ -84,6 +108,8 @@ func (t *Trace) RecordSource(
 	)
 }
 
+// RecordObservation records something observed from an external
+// source, such as a metric value or a tool response.
 func (t *Trace) RecordObservation(
 	ctx context.Context,
 	observation Observation,
@@ -94,6 +120,7 @@ func (t *Trace) RecordObservation(
 	)
 }
 
+// RecordFact records information accepted as evidence for a decision.
 func (t *Trace) RecordFact(
 	ctx context.Context,
 	fact Fact,
@@ -104,6 +131,9 @@ func (t *Trace) RecordFact(
 	)
 }
 
+// RecordDecision records a selected outcome or judgment made by the
+// agent. Rationale is intended for concise, explicit justification and
+// is not intended to store private model chain-of-thought.
 func (t *Trace) RecordDecision(
 	ctx context.Context,
 	decision Decision,
@@ -114,6 +144,8 @@ func (t *Trace) RecordDecision(
 	)
 }
 
+// RecordAction records something the agent actually executed or
+// attempted to execute.
 func (t *Trace) RecordAction(
 	ctx context.Context,
 	action Action,
@@ -124,6 +156,8 @@ func (t *Trace) RecordAction(
 	)
 }
 
+// Produced records a Source -> Observation PRODUCED relationship,
+// indicating that the source produced the observation.
 func (t *Trace) Produced(
 	ctx context.Context,
 	sourceID string,
@@ -136,6 +170,8 @@ func (t *Trace) Produced(
 	)
 }
 
+// Supports records an Observation -> Fact SUPPORTS relationship,
+// indicating that the observation supports the fact.
 func (t *Trace) Supports(
 	ctx context.Context,
 	observationID string,
@@ -148,6 +184,8 @@ func (t *Trace) Supports(
 	)
 }
 
+// BasisOf records a Fact -> Decision BASIS_OF relationship, indicating
+// that the fact was a basis for the decision.
 func (t *Trace) BasisOf(
 	ctx context.Context,
 	factID string,
@@ -160,6 +198,8 @@ func (t *Trace) BasisOf(
 	)
 }
 
+// Caused records a Decision -> Action CAUSED relationship, indicating
+// that the decision caused the action.
 func (t *Trace) Caused(
 	ctx context.Context,
 	decisionID string,
@@ -172,6 +212,9 @@ func (t *Trace) Caused(
 	)
 }
 
+// TraceActionCause walks backward from an action through its causal
+// chain (Decision, Fact, Observation, Source), up to maxDepth hops,
+// and returns the visited nodes in breadth-first order.
 func (t *Trace) TraceActionCause(
 	ctx context.Context,
 	actionID string,
@@ -184,6 +227,9 @@ func (t *Trace) TraceActionCause(
 	)
 }
 
+// TraceActionCauseAt is like TraceActionCause but reconstructs the
+// causal chain as it existed at the given point in time, including
+// only entities and relationships that were recorded and valid at at.
 func (t *Trace) TraceActionCauseAt(
 	ctx context.Context,
 	actionID string,

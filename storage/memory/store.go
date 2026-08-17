@@ -1,3 +1,6 @@
+// Package memory implements an in-memory graph.Store, the default
+// storage backend used by aitracecause.Trace when no other store is
+// configured.
 package memory
 
 import (
@@ -10,6 +13,10 @@ import (
 	"github.com/karosia/ai-trace-cause/graph"
 )
 
+// Store is a concurrent-safe, in-memory implementation of graph.Store.
+// It keeps nodes and edges in maps, plus outgoing/incoming edge
+// indexes for constant-time neighbor lookups, all guarded by a
+// sync.RWMutex. Data does not persist beyond the process lifetime.
 type Store struct {
 	mu sync.RWMutex
 
@@ -20,6 +27,7 @@ type Store struct {
 	incoming map[string]map[string]struct{}
 }
 
+// New creates an empty Store.
 func New() *Store {
 	return &Store{
 		nodes:    make(map[string]graph.Node),
@@ -29,6 +37,8 @@ func New() *Store {
 	}
 }
 
+// PutNode adds node to the store. It returns graph.ErrNodeAlreadyExists
+// if a node with the same ID already exists.
 func (s *Store) PutNode(
 	ctx context.Context,
 	node graph.Node,
@@ -61,6 +71,8 @@ func (s *Store) PutNode(
 	return nil
 }
 
+// GetNode returns the node with the given id. It returns
+// graph.ErrNodeNotFound if no such node exists.
 func (s *Store) GetNode(
 	ctx context.Context,
 	id string,
@@ -84,6 +96,10 @@ func (s *Store) GetNode(
 	return cloneNode(node), nil
 }
 
+// PutEdge adds edge to the store and updates the outgoing/incoming
+// indexes. It returns graph.ErrEdgeAlreadyExists if an edge with the
+// same ID already exists, or graph.ErrNodeNotFound if edge.From or
+// edge.To does not reference an existing node.
 func (s *Store) PutEdge(
 	ctx context.Context,
 	edge graph.Edge,
@@ -143,6 +159,8 @@ func (s *Store) PutEdge(
 	return nil
 }
 
+// GetEdge returns the edge with the given id. It returns
+// graph.ErrEdgeNotFound if no such edge exists.
 func (s *Store) GetEdge(
 	ctx context.Context,
 	id string,
@@ -166,6 +184,8 @@ func (s *Store) GetEdge(
 	return cloneEdge(edge), nil
 }
 
+// OutgoingEdges returns the edges leaving nodeID, sorted by edge ID.
+// It returns graph.ErrNodeNotFound if nodeID does not exist.
 func (s *Store) OutgoingEdges(
 	ctx context.Context,
 	nodeID string,
@@ -203,6 +223,8 @@ func (s *Store) OutgoingEdges(
 	return edges, nil
 }
 
+// IncomingEdges returns the edges entering nodeID, sorted by edge ID.
+// It returns graph.ErrNodeNotFound if nodeID does not exist.
 func (s *Store) IncomingEdges(
 	ctx context.Context,
 	nodeID string,
