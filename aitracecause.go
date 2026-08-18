@@ -277,3 +277,18 @@ func (t *Trace) Explain(
 		maxDepth,
 	)
 }
+
+// FindNodes lists nodes matching filter, for queries other than
+// direct ID lookup or causal traversal, such as "every Decision
+// recorded in the last hour." It returns an error wrapping
+// graph.ErrStoreNotQueryable if the configured store does not support
+// querying; the default in-memory store does.
+func (t *Trace) FindNodes(
+	ctx context.Context,
+	filter NodeFilter,
+) ([]Node, error) {
+	return t.semantic.FindNodes(
+		ctx,
+		filter,
+	)
+}

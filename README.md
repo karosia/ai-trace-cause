@@ -49,6 +49,7 @@ This makes it possible to answer questions such as:
 - Historical causal reconstruction
 - Optional OpenTelemetry Trace ID and Span ID correlation
 - Pluggable storage through a `graph.Store` interface
+- Optional batch writes and querying, auto-detected on the store
 - Concurrent-safe in-memory storage
 - Provider-agnostic core with no dependency on a specific LLM vendor
 
@@ -664,6 +665,47 @@ type Store interface {
 ```
 
 The built-in memory store is concurrent-safe and maintains incoming and outgoing relationship indexes for traversal.
+
+### Optional Store Capabilities
+
+A store can additionally implement any of these optional interfaces. `ai-trace-cause` detects them with a type assertion and uses them automatically; a store that implements none of them still works for everything else.
+
+```go
+// Persist a batch of nodes/edges in one call, e.g. one DB transaction.
+type NodeBatchStore interface {
+    PutNodes(ctx context.Context, nodes []Node) error
+}
+
+type EdgeBatchStore interface {
+    PutEdges(ctx context.Context, edges []Edge) error
+}
+
+// List nodes by criteria other than ID lookup or traversal.
+type Queryable interface {
+    FindNodes(ctx context.Context, filter NodeFilter) ([]Node, error)
+}
+```
+
+The built-in memory store implements all three. `Graph.AddNodes` and `Graph.AddEdges` use the batch interfaces when available and fall back to one call per node/edge otherwise:
+
+```go
+if err := g.AddNodes(ctx, nodes); err != nil {
+    log.Fatal(err)
+}
+```
+
+`FindNodes` supports filtering by node type and by `RecordedAt` range, for queries traversal doesn't answer, such as "every Decision recorded in the last hour":
+
+```go
+decisions, err := trace.FindNodes(
+    ctx,
+    aitracecause.NodeFilter{
+        Type: "Decision",
+    },
+)
+```
+
+It returns an error wrapping `graph.ErrStoreNotQueryable` if the configured store doesn't implement `Queryable`.
 
 ---
 

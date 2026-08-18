@@ -33,6 +33,15 @@ type Validity = semantic.Validity
 // through.
 type Visit = graph.Visit
 
+// Node is a single entity in the underlying causal graph, as returned
+// by FindNodes and embedded in Visit.
+type Node = graph.Node
+
+// NodeFilter narrows the nodes returned by FindNodes. A zero-value
+// field imposes no constraint on that dimension, so the zero-value
+// NodeFilter matches every node.
+type NodeFilter = graph.NodeFilter
+
 // TelemetryHook correlates a context with an active OpenTelemetry
 // trace and span, so recorded entities and relationships can be tied
 // back to the distributed trace that produced them.

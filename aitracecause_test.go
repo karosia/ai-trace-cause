@@ -558,3 +558,49 @@ func TestExplainThroughSDK(
 		}
 	}
 }
+
+func TestFindNodesThroughSDK(
+	t *testing.T,
+) {
+	ctx := context.Background()
+
+	trace, err := aitracecause.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := trace.RecordDecision(
+		ctx,
+		aitracecause.Decision{
+			ID:      "decision-001",
+			Outcome: "Scale service",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := trace.RecordAction(
+		ctx,
+		aitracecause.Action{
+			ID:   "action-001",
+			Name: "scale_service",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := trace.FindNodes(
+		ctx,
+		aitracecause.NodeFilter{Type: "Decision"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(results) != 1 || results[0].ID != "decision-001" {
+		t.Fatalf(
+			"FindNodes() = %v, want [decision-001]",
+			results,
+		)
+	}
+}

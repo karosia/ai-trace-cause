@@ -48,4 +48,10 @@ var (
 	ErrNodeNotVisibleAt = errors.New(
 		"node is not visible at the requested time",
 	)
+
+	// ErrStoreNotQueryable is returned by Graph.FindNodes when the
+	// underlying Store does not implement Queryable.
+	ErrStoreNotQueryable = errors.New(
+		"store does not support querying",
+	)
 )

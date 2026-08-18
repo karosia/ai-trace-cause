@@ -590,6 +590,18 @@ func (s *Service) TraceSourceEffects(
 	)
 }
 
+// FindNodes lists nodes matching filter, for queries other than
+// direct ID lookup or causal traversal, such as "every Decision
+// recorded in the last hour." It returns graph.ErrStoreNotQueryable if
+// the configured store does not implement graph.Queryable; the
+// built-in in-memory store does.
+func (s *Service) FindNodes(
+	ctx context.Context,
+	filter graph.NodeFilter,
+) ([]graph.Node, error) {
+	return s.graph.FindNodes(ctx, filter)
+}
+
 func (s *Service) requireNodeType(ctx context.Context, nodeID string, expected NodeType) error {
 	node, err := s.graph.GetNode(ctx, nodeID)
 	if err != nil {

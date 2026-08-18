@@ -96,6 +96,59 @@ func (s *Store) GetNode(
 	return cloneNode(node), nil
 }
 
+// PutNodes adds all of nodes to the store as a single locked
+// operation, implementing graph.NodeBatchStore. The whole batch is
+// validated (empty ID/Type, duplicate ID within the batch or against
+// the store) before anything is written, so a rejected batch leaves
+// the store unchanged.
+func (s *Store) PutNodes(
+	ctx context.Context,
+	nodes []graph.Node,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(nodes))
+
+	for _, node := range nodes {
+		if node.ID == "" {
+			return graph.ErrEmptyNodeID
+		}
+
+		if node.Type == "" {
+			return graph.ErrEmptyNodeType
+		}
+
+		if _, exists := s.nodes[node.ID]; exists {
+			return fmt.Errorf(
+				"%w: %s",
+				graph.ErrNodeAlreadyExists,
+				node.ID,
+			)
+		}
+
+		if _, duplicate := seen[node.ID]; duplicate {
+			return fmt.Errorf(
+				"%w: %s",
+				graph.ErrNodeAlreadyExists,
+				node.ID,
+			)
+		}
+
+		seen[node.ID] = struct{}{}
+	}
+
+	for _, node := range nodes {
+		s.nodes[node.ID] = cloneNode(node)
+	}
+
+	return nil
+}
+
 // PutEdge adds edge to the store and updates the outgoing/incoming
 // indexes. It returns graph.ErrEdgeAlreadyExists if an edge with the
 // same ID already exists, or graph.ErrNodeNotFound if edge.From or
@@ -155,6 +208,86 @@ func (s *Store) PutEdge(
 
 	s.outgoing[edge.From][edge.ID] = struct{}{}
 	s.incoming[edge.To][edge.ID] = struct{}{}
+
+	return nil
+}
+
+// PutEdges adds all of edges to the store as a single locked
+// operation, implementing graph.EdgeBatchStore. The whole batch is
+// validated (empty ID/Type, duplicate edge ID, missing From/To node)
+// before anything is written, so a rejected batch leaves the store
+// unchanged.
+func (s *Store) PutEdges(
+	ctx context.Context,
+	edges []graph.Edge,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seen := make(map[string]struct{}, len(edges))
+
+	for _, edge := range edges {
+		if edge.ID == "" {
+			return graph.ErrEmptyEdgeID
+		}
+
+		if edge.Type == "" {
+			return graph.ErrEmptyEdgeType
+		}
+
+		if _, exists := s.edges[edge.ID]; exists {
+			return fmt.Errorf(
+				"%w: %s",
+				graph.ErrEdgeAlreadyExists,
+				edge.ID,
+			)
+		}
+
+		if _, duplicate := seen[edge.ID]; duplicate {
+			return fmt.Errorf(
+				"%w: %s",
+				graph.ErrEdgeAlreadyExists,
+				edge.ID,
+			)
+		}
+
+		if _, exists := s.nodes[edge.From]; !exists {
+			return fmt.Errorf(
+				"%w: %s",
+				graph.ErrNodeNotFound,
+				edge.From,
+			)
+		}
+
+		if _, exists := s.nodes[edge.To]; !exists {
+			return fmt.Errorf(
+				"%w: %s",
+				graph.ErrNodeNotFound,
+				edge.To,
+			)
+		}
+
+		seen[edge.ID] = struct{}{}
+	}
+
+	for _, edge := range edges {
+		s.edges[edge.ID] = cloneEdge(edge)
+
+		if s.outgoing[edge.From] == nil {
+			s.outgoing[edge.From] = make(map[string]struct{})
+		}
+
+		if s.incoming[edge.To] == nil {
+			s.incoming[edge.To] = make(map[string]struct{})
+		}
+
+		s.outgoing[edge.From][edge.ID] = struct{}{}
+		s.incoming[edge.To][edge.ID] = struct{}{}
+	}
 
 	return nil
 }
@@ -261,6 +394,54 @@ func (s *Store) IncomingEdges(
 
 	return edges, nil
 }
+
+// FindNodes returns every node matching filter, sorted by node ID,
+// implementing graph.Queryable. It scans the full node set, so cost is
+// linear in the number of stored nodes regardless of filter
+// selectivity.
+func (s *Store) FindNodes(
+	ctx context.Context,
+	filter graph.NodeFilter,
+) ([]graph.Node, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	matches := make([]graph.Node, 0)
+
+	for _, node := range s.nodes {
+		if filter.Type != "" && node.Type != filter.Type {
+			continue
+		}
+
+		if filter.RecordedAfter != nil &&
+			node.RecordedAt.Before(*filter.RecordedAfter) {
+			continue
+		}
+
+		if filter.RecordedBefore != nil &&
+			!node.RecordedAt.Before(*filter.RecordedBefore) {
+			continue
+		}
+
+		matches = append(matches, cloneNode(node))
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].ID < matches[j].ID
+	})
+
+	return matches, nil
+}
+
+var (
+	_ graph.NodeBatchStore = (*Store)(nil)
+	_ graph.EdgeBatchStore = (*Store)(nil)
+	_ graph.Queryable      = (*Store)(nil)
+)
 
 func cloneNode(node graph.Node) graph.Node {
 	return graph.Node{
