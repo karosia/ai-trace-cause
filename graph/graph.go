@@ -8,7 +8,10 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"sort"
+
+	"github.com/karosia/ai-trace-cause/internal/propcopy"
 )
 
 // Graph is a directed graph backed by a pluggable Store. It validates
@@ -31,24 +34,19 @@ func New(store Store) (*Graph, error) {
 
 // AddNode validates and adds node to the graph. It returns
 // ErrEmptyNodeID or ErrEmptyNodeType if the corresponding field is
-// empty, or ErrInvalidValidityInterval if node's validity interval is
-// malformed.
+// empty, ErrInvalidValidityInterval if node's validity interval is
+// malformed, or ErrUnsupportedPropertyValue if a property value is not
+// JSON-representable.
+//
+// Properties are deep-copied before they reach the Store, so mutating
+// the caller's maps or slices afterwards never alters the recorded
+// node.
 func (g *Graph) AddNode(
 	ctx context.Context,
 	node Node,
 ) error {
-	if node.ID == "" {
-		return ErrEmptyNodeID
-	}
-
-	if node.Type == "" {
-		return ErrEmptyNodeType
-	}
-
-	if err := validateValidityInterval(
-		node.ValidFrom,
-		node.ValidUntil,
-	); err != nil {
+	node, err := prepareNode(node)
+	if err != nil {
 		return err
 	}
 
@@ -66,24 +64,15 @@ func (g *Graph) GetNode(
 
 // AddEdge validates and adds edge to the graph. It returns
 // ErrEmptyEdgeID or ErrEmptyEdgeType if the corresponding field is
-// empty, or ErrInvalidValidityInterval if edge's validity interval is
-// malformed.
+// empty, ErrInvalidValidityInterval if edge's validity interval is
+// malformed, or ErrUnsupportedPropertyValue if a property value is not
+// JSON-representable. Properties are deep-copied as in AddNode.
 func (g *Graph) AddEdge(
 	ctx context.Context,
 	edge Edge,
 ) error {
-	if edge.ID == "" {
-		return ErrEmptyEdgeID
-	}
-
-	if edge.Type == "" {
-		return ErrEmptyEdgeType
-	}
-
-	if err := validateValidityInterval(
-		edge.ValidFrom,
-		edge.ValidUntil,
-	); err != nil {
+	edge, err := prepareEdge(edge)
+	if err != nil {
 		return err
 	}
 
@@ -155,4 +144,69 @@ func (g *Graph) IncomingNeighbors(
 	})
 
 	return neighbors, nil
+}
+
+// prepareNode validates node and returns a copy whose Properties are
+// deep-copied and independent of the caller's.
+func prepareNode(node Node) (Node, error) {
+	if node.ID == "" {
+		return Node{}, ErrEmptyNodeID
+	}
+
+	if node.Type == "" {
+		return Node{}, ErrEmptyNodeType
+	}
+
+	if err := validateValidityInterval(
+		node.ValidFrom,
+		node.ValidUntil,
+	); err != nil {
+		return Node{}, err
+	}
+
+	properties, err := propcopy.CloneMap(node.Properties)
+	if err != nil {
+		return Node{}, fmt.Errorf(
+			"%w: node %q: %w",
+			ErrUnsupportedPropertyValue,
+			node.ID,
+			err,
+		)
+	}
+
+	node.Properties = properties
+
+	return node, nil
+}
+
+// prepareEdge is the Edge counterpart to prepareNode.
+func prepareEdge(edge Edge) (Edge, error) {
+	if edge.ID == "" {
+		return Edge{}, ErrEmptyEdgeID
+	}
+
+	if edge.Type == "" {
+		return Edge{}, ErrEmptyEdgeType
+	}
+
+	if err := validateValidityInterval(
+		edge.ValidFrom,
+		edge.ValidUntil,
+	); err != nil {
+		return Edge{}, err
+	}
+
+	properties, err := propcopy.CloneMap(edge.Properties)
+	if err != nil {
+		return Edge{}, fmt.Errorf(
+			"%w: edge %q: %w",
+			ErrUnsupportedPropertyValue,
+			edge.ID,
+			err,
+		)
+	}
+
+	edge.Properties = properties
+
+	return edge, nil
 }

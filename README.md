@@ -38,15 +38,19 @@ This makes it possible to answer questions such as:
 - Semantic causal graph for AI agent execution
 - Source, Observation, Fact, Decision, and Action entities
 - Typed causal relationships
-- Automatic UUIDv7 ID generation
+- Automatic UUIDv7 ID generation for entities
 - Caller-provided IDs when external IDs already exist
+- Idempotent relationships with deterministic IDs (safe to retry)
+- Link an entity to its causes in the same call with `WithCauses`
 - Causal traversal from Action back to Source
 - Forward traversal from Source to the Actions it influenced
-- Human-readable causal explanations
+- Human-readable causal explanations covering every relationship
 - Breadth-first and depth-first graph traversal
 - Cycle protection and maximum traversal depth
 - Temporal context with `RecordedAt`, `ValidFrom`, and `ValidUntil`
-- Historical causal reconstruction
+- Historical causal reconstruction, including "what did the agent know when it acted?"
+- Append-only retractions that never rewrite history
+- Recorded values are deep-copied and immutable after recording
 - Optional OpenTelemetry Trace ID and Span ID correlation
 - Pluggable storage through a `graph.Store` interface
 - Optional batch writes and querying, auto-detected on the store
@@ -344,7 +348,27 @@ err := trace.Caused(
 Decision ──CAUSED──> Action
 ```
 
-Relationship IDs are generated automatically.
+Relationship IDs are derived from the relationship itself (see `semantic.RelationID`), so recording the same relationship twice is a no-op. Agents retry; retries never create duplicate edges.
+
+### Linking Causes While Recording
+
+Instead of a separate `Produced`/`Supports`/`BasisOf`/`Caused` call, an entity can be linked to its direct causes in the same call. The relationship type is implied by the entity type:
+
+```go
+decision, err := trace.RecordDecision(
+    ctx,
+    aitracecause.Decision{Outcome: "Scale the service"},
+    aitracecause.WithCauses(fact.ID),
+)
+
+action, err := trace.RecordAction(
+    ctx,
+    aitracecause.Action{Name: "scale_service"},
+    aitracecause.WithCauses(decision.ID),
+)
+```
+
+All causes are validated before anything is written, so a missing or wrongly-typed cause leaves the graph unchanged. The relationships share the entity's `RecordedAt`, which matters for [historical tracing](#what-did-the-agent-know-when-it-acted).
 
 ---
 
@@ -362,7 +386,7 @@ observation, err := trace.RecordObservation(
 )
 ```
 
-The returned entity contains the generated ID:
+The returned entity contains the generated ID and its `RecordedAt`:
 
 ```go
 fmt.Println(observation.ID)
@@ -468,7 +492,7 @@ Action
 
 ### Human-Readable Explanations
 
-Use `Explain` to render the causal chain behind an action as plain-English sentences instead of walking `[]Visit` by hand.
+Use `Explain` to render the causal graph behind an action as plain-English sentences, one per relationship, instead of walking the graph by hand. When a node has several causes, or one observation supports several facts, every relationship gets its own sentence.
 
 ```go
 explanation, err := trace.Explain(
@@ -485,7 +509,21 @@ Fact "CPU usage is high" was supported by Observation "cpu_usage" (value=94).
 Observation "cpu_usage" (value=94) was produced by Source "Prometheus" (prometheus://production/cpu_usage).
 ```
 
-This is intended for logging, debugging, and audit output. For programmatic access to the chain itself, use `TraceActionCause`.
+This is intended for logging, debugging, and audit output.
+
+### Complete Causal Graphs
+
+`TraceActionCause` returns `[]Visit`, where each node records only the *first* edge it was reached through: a spanning tree. When the graph branches and rejoins, use `TraceActionCauseGraph`, which also returns every causal relationship between the reached nodes and any retractions:
+
+```go
+causal, err := trace.TraceActionCauseGraph(ctx, action.ID, 4)
+
+for _, edge := range causal.Edges {
+    fmt.Printf("%s -[%s]-> %s\n", edge.From, edge.Type, edge.To)
+}
+```
+
+`ExplainGraph(causal)` renders any `CausalGraph` as text, including the historical ones below.
 
 ---
 
@@ -493,7 +531,7 @@ This is intended for logging, debugging, and audit output. For programmatic acce
 
 Causal explanations often need to reflect **what the agent knew at the time**, rather than what is known now.
 
-Entities and relationships can carry temporal information:
+Entities carry the following temporal information, and relationships carry `RecordedAt`:
 
 ```text
 RecordedAt
@@ -550,7 +588,34 @@ visits, err := trace.TraceActionCauseAt(
 )
 ```
 
-Only entities and relationships that were known and valid at `at` are included.
+Only entities and relationships that were known and valid at `at` are included. `TraceActionCauseGraphAt` does the same and returns a `CausalGraph`.
+
+### What Did the Agent Know When It Acted?
+
+`TraceActionCauseAtActionTime` uses the action's own `RecordedAt` as the point in time, so callers don't need to track timestamps:
+
+```go
+causal, err := trace.TraceActionCauseAtActionTime(ctx, action.ID, 4)
+fmt.Println(aitracecause.ExplainGraph(causal))
+```
+
+A relationship recorded *after* the action, for example a `Caused` call made after `RecordAction`, is knowledge acquired after the fact and is not visible here. Link an action's decisions with `WithCauses` when recording it.
+
+### Retractions
+
+Recorded entities are never modified. When a fact turns out to be wrong, record a retraction alongside it:
+
+```go
+_, err := trace.Retract(ctx, aitracecause.Retraction{
+    NodeID:      fact.ID,
+    Reason:      "billing feed was stale",
+    EffectiveAt: staleSince, // optional; zero means now
+})
+```
+
+- Current traces list the retraction in `CausalGraph.Retractions`, and `Explain` marks the node: `Fact "subscription expired" [retracted: billing feed was stale]`.
+- Historical traces only see a retraction that was both recorded and in effect at that time, so a retroactive correction does not rewrite what the agent believed when it acted.
+- Repeating an identical retraction is safe; a conflicting one returns `semantic.ErrAlreadyRetracted`.
 
 ---
 
@@ -618,6 +683,14 @@ decision, err := trace.RecordDecision(
 
 ---
 
+## Recorded Values
+
+`Value`, `Metadata`, and `Parameters` are deep-copied when recorded, and again when read, so mutating your maps or slices afterwards, or mutating a returned node, never changes the recorded history.
+
+Values must be JSON-representable: `nil`, bools, strings, numbers (not NaN or ±Inf), `time.Time`, and maps with string keys, slices, arrays, and pointers of those. Concrete types are preserved (a `[]string` stays a `[]string`). Anything else (funcs, channels, structs, non-string map keys) is rejected with an error wrapping `graph.ErrUnsupportedPropertyValue` that names the offending path, e.g. `parameters.callback`. This keeps the in-memory store's behavior identical to what a persistent store can round-trip. Convert structs to maps before recording them.
+
+---
+
 ## Storage
 
 The public SDK uses the in-memory store by default:
@@ -649,6 +722,8 @@ type Store interface {
     PutNode(ctx context.Context, node Node) error
     GetNode(ctx context.Context, id string) (Node, error)
 
+    // Must return an error wrapping ErrEdgeAlreadyExists for a duplicate
+    // edge ID; relationship idempotency relies on it.
     PutEdge(ctx context.Context, edge Edge) error
     GetEdge(ctx context.Context, id string) (Edge, error)
 

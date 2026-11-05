@@ -28,6 +28,34 @@ type Action = semantic.Action
 // modeled domain.
 type Validity = semantic.Validity
 
+// Retraction records that a node should no longer be relied upon,
+// without modifying or deleting it. See Trace.Retract.
+type Retraction = semantic.Retraction
+
+// CausalGraph is every node reached by a causal trace, every causal
+// relationship between them, and any retractions for those nodes.
+type CausalGraph = semantic.CausalGraph
+
+// RecordOption configures a single Record* call. See WithCauses.
+type RecordOption = semantic.RecordOption
+
+// WithCauses links the entity being recorded to its direct causes in
+// the same call: an Observation to Source(s), a Fact to
+// Observation(s), a Decision to Fact(s), or an Action to Decision(s).
+// Causes are validated before anything is written, and the
+// relationships share the entity's RecordedAt.
+func WithCauses(causeIDs ...string) RecordOption {
+	return semantic.WithCauses(causeIDs...)
+}
+
+// ExplainGraph renders a CausalGraph as one plain-English sentence per
+// causal relationship, annotating retracted nodes. Use it with
+// Trace.TraceActionCauseAtActionTime to explain an action as it was
+// understood when it happened.
+func ExplainGraph(causal CausalGraph) string {
+	return semantic.ExplainGraph(causal)
+}
+
 // Visit is a single node visited while tracing a causal chain, along
 // with the depth at which it was found and the edge it was reached
 // through.

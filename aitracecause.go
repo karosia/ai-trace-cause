@@ -109,55 +109,73 @@ func (t *Trace) RecordSource(
 }
 
 // RecordObservation records something observed from an external
-// source, such as a metric value or a tool response.
+// source, such as a metric value or a tool response. Pass
+// WithCauses(sourceIDs...) to link the producing Source(s) in the same
+// call.
 func (t *Trace) RecordObservation(
 	ctx context.Context,
 	observation Observation,
+	options ...RecordOption,
 ) (Observation, error) {
 	return t.semantic.RecordObservation(
 		ctx,
 		observation,
+		options...,
 	)
 }
 
 // RecordFact records information accepted as evidence for a decision.
+// Pass WithCauses(observationIDs...) to link the supporting
+// Observation(s) in the same call.
 func (t *Trace) RecordFact(
 	ctx context.Context,
 	fact Fact,
+	options ...RecordOption,
 ) (Fact, error) {
 	return t.semantic.RecordFact(
 		ctx,
 		fact,
+		options...,
 	)
 }
 
 // RecordDecision records a selected outcome or judgment made by the
 // agent. Rationale is intended for concise, explicit justification and
-// is not intended to store private model chain-of-thought.
+// is not intended to store private model chain-of-thought. Pass
+// WithCauses(factIDs...) to link the Fact(s) it was based on in the
+// same call.
 func (t *Trace) RecordDecision(
 	ctx context.Context,
 	decision Decision,
+	options ...RecordOption,
 ) (Decision, error) {
 	return t.semantic.RecordDecision(
 		ctx,
 		decision,
+		options...,
 	)
 }
 
 // RecordAction records something the agent actually executed or
-// attempted to execute.
+// attempted to execute. Pass WithCauses(decisionIDs...) to link the
+// Decision(s) that caused it in the same call; this is what lets
+// TraceActionCauseAtActionTime see them.
 func (t *Trace) RecordAction(
 	ctx context.Context,
 	action Action,
+	options ...RecordOption,
 ) (Action, error) {
 	return t.semantic.RecordAction(
 		ctx,
 		action,
+		options...,
 	)
 }
 
 // Produced records a Source -> Observation PRODUCED relationship,
-// indicating that the source produced the observation.
+// indicating that the source produced the observation. Recording the
+// same relationship again is a no-op, so retries are safe; the same
+// holds for Supports, BasisOf, and Caused.
 func (t *Trace) Produced(
 	ctx context.Context,
 	sourceID string,
@@ -262,10 +280,11 @@ func (t *Trace) TraceSourceEffects(
 	)
 }
 
-// Explain walks backward from the Action identified by actionID, as
-// TraceActionCause does, and renders the resulting causal chain as a
-// human-readable narrative suitable for logging, debugging, or audit
-// output.
+// Explain walks backward from the Action identified by actionID and
+// renders every causal relationship it finds as a human-readable
+// sentence, suitable for logging, debugging, or audit output. Retracted
+// nodes are annotated. See ExplainGraph to explain a graph obtained at
+// a specific point in time.
 func (t *Trace) Explain(
 	ctx context.Context,
 	actionID string,
@@ -275,6 +294,72 @@ func (t *Trace) Explain(
 		ctx,
 		actionID,
 		maxDepth,
+	)
+}
+
+// TraceActionCauseGraph walks backward from an action like
+// TraceActionCause, but returns every causal relationship between the
+// reached nodes, not only the first edge each node was reached
+// through, plus any retractions recorded for those nodes.
+func (t *Trace) TraceActionCauseGraph(
+	ctx context.Context,
+	actionID string,
+	maxDepth int,
+) (CausalGraph, error) {
+	return t.semantic.TraceActionCauseGraph(
+		ctx,
+		actionID,
+		maxDepth,
+	)
+}
+
+// TraceActionCauseGraphAt is like TraceActionCauseGraph but
+// reconstructs the graph as it was known at at, including only
+// retractions that were recorded and in effect by then.
+func (t *Trace) TraceActionCauseGraphAt(
+	ctx context.Context,
+	actionID string,
+	at time.Time,
+	maxDepth int,
+) (CausalGraph, error) {
+	return t.semantic.TraceActionCauseGraphAt(
+		ctx,
+		actionID,
+		at,
+		maxDepth,
+	)
+}
+
+// TraceActionCauseAtActionTime answers "what did the agent know when
+// it acted?" by reconstructing the causal graph as of the action's own
+// RecordedAt. Link the action's decisions with WithCauses when
+// recording it; a later Caused call is knowledge acquired after the
+// action and is, correctly, not visible.
+func (t *Trace) TraceActionCauseAtActionTime(
+	ctx context.Context,
+	actionID string,
+	maxDepth int,
+) (CausalGraph, error) {
+	return t.semantic.TraceActionCauseAtActionTime(
+		ctx,
+		actionID,
+		maxDepth,
+	)
+}
+
+// Retract records that a node, typically a Fact or Observation, should
+// no longer be relied upon. Nothing recorded is modified: traces as of
+// an earlier time still show what was believed then, and current
+// traces and explanations mark the node as retracted. Retrying an
+// identical retraction is safe; a conflicting one returns an error
+// wrapping semantic.ErrAlreadyRetracted.
+func (t *Trace) Retract(
+	ctx context.Context,
+	retraction Retraction,
+) (Retraction, error) {
+	return t.semantic.Retract(
+		ctx,
+		retraction,
 	)
 }
 

@@ -12,13 +12,7 @@ func TestActionCauseStoryWithProvenance(
 ) {
 	ctx := context.Background()
 
-	trace, _ := newTestService(
-		t,
-		"edge-produced",
-		"edge-supports",
-		"edge-basis",
-		"edge-caused",
-	)
+	trace, _ := newTestService(t)
 
 	source, err := trace.RecordSource(
 		ctx,
