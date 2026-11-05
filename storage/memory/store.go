@@ -6,11 +6,13 @@ package memory
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/karosia/ai-trace-cause/graph"
+	"github.com/karosia/ai-trace-cause/internal/propcopy"
 )
 
 // Store is a concurrent-safe, in-memory implementation of graph.Store.
@@ -494,13 +496,12 @@ func cloneProperties(
 		return nil
 	}
 
-	cloned := make(
-		map[string]any,
-		len(properties),
-	)
-
-	for key, value := range properties {
-		cloned[key] = value
+	// Graph validates properties before they reach the store, so a
+	// copy can only fail for values written through the Store
+	// directly. Those are kept as-is rather than dropped.
+	cloned, err := propcopy.CloneMap(properties)
+	if err != nil {
+		return maps.Clone(properties)
 	}
 
 	return cloned

@@ -30,28 +30,22 @@ func (g *Graph) AddNodes(
 	ctx context.Context,
 	nodes []Node,
 ) error {
+	prepared := make([]Node, 0, len(nodes))
+
 	for _, node := range nodes {
-		if node.ID == "" {
-			return ErrEmptyNodeID
-		}
-
-		if node.Type == "" {
-			return ErrEmptyNodeType
-		}
-
-		if err := validateValidityInterval(
-			node.ValidFrom,
-			node.ValidUntil,
-		); err != nil {
+		node, err := prepareNode(node)
+		if err != nil {
 			return err
 		}
+
+		prepared = append(prepared, node)
 	}
 
 	if batch, ok := g.store.(NodeBatchStore); ok {
-		return batch.PutNodes(ctx, nodes)
+		return batch.PutNodes(ctx, prepared)
 	}
 
-	for _, node := range nodes {
+	for _, node := range prepared {
 		if err := g.store.PutNode(ctx, node); err != nil {
 			return err
 		}
@@ -68,28 +62,22 @@ func (g *Graph) AddEdges(
 	ctx context.Context,
 	edges []Edge,
 ) error {
+	prepared := make([]Edge, 0, len(edges))
+
 	for _, edge := range edges {
-		if edge.ID == "" {
-			return ErrEmptyEdgeID
-		}
-
-		if edge.Type == "" {
-			return ErrEmptyEdgeType
-		}
-
-		if err := validateValidityInterval(
-			edge.ValidFrom,
-			edge.ValidUntil,
-		); err != nil {
+		edge, err := prepareEdge(edge)
+		if err != nil {
 			return err
 		}
+
+		prepared = append(prepared, edge)
 	}
 
 	if batch, ok := g.store.(EdgeBatchStore); ok {
-		return batch.PutEdges(ctx, edges)
+		return batch.PutEdges(ctx, prepared)
 	}
 
-	for _, edge := range edges {
+	for _, edge := range prepared {
 		if err := g.store.PutEdge(ctx, edge); err != nil {
 			return err
 		}

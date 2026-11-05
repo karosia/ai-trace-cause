@@ -33,7 +33,8 @@ type Visit struct {
 
 // BFS performs a breadth-first traversal starting at startID,
 // following edges in direction up to maxDepth hops, and returns every
-// visited node in the order it was discovered. It returns
+// visited node in the order it was discovered. A node's edges are
+// followed in RecordedAt order, then by edge ID. It returns
 // ErrInvalidMaxDepth if maxDepth is negative, ErrInvalidDirection if
 // direction is not recognized, or ErrNodeNotFound if startID does not
 // exist. Each node is visited at most once (cycle-safe).
@@ -104,9 +105,7 @@ func (g *Graph) BFS(
 			return nil, err
 		}
 
-		sort.Slice(edges, func(i, j int) bool {
-			return edges[i].ID < edges[j].ID
-		})
+		sortEdgesChronologically(edges)
 
 		for _, edge := range edges {
 			neighborID := neighborIDForDirection(
@@ -218,9 +217,7 @@ func (g *Graph) DFS(
 			return nil, err
 		}
 
-		sort.Slice(edges, func(i, j int) bool {
-			return edges[i].ID < edges[j].ID
-		})
+		sortEdgesChronologically(edges)
 
 		for i := len(edges) - 1; i >= 0; i-- {
 			edge := edges[i]
@@ -305,4 +302,19 @@ func validateDirection(
 			direction,
 		)
 	}
+}
+
+// sortEdgesChronologically orders edges by RecordedAt, then by ID, so
+// that traversal order follows recording order (the order an agent
+// gathered its evidence) regardless of how edge IDs are generated.
+// Ties, including edges with no RecordedAt, fall back to ID order,
+// which keeps traversal deterministic.
+func sortEdgesChronologically(edges []Edge) {
+	sort.Slice(edges, func(i, j int) bool {
+		if !edges[i].RecordedAt.Equal(edges[j].RecordedAt) {
+			return edges[i].RecordedAt.Before(edges[j].RecordedAt)
+		}
+
+		return edges[i].ID < edges[j].ID
+	})
 }

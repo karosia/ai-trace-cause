@@ -2,7 +2,6 @@ package graph
 
 import (
 	"context"
-	"sort"
 	"time"
 )
 
@@ -154,9 +153,7 @@ func (g *Graph) BFSAt(
 			return nil, err
 		}
 
-		sort.Slice(edges, func(i, j int) bool {
-			return edges[i].ID < edges[j].ID
-		})
+		sortEdgesChronologically(edges)
 
 		for _, edge := range edges {
 			if !edgeVisibleAt(edge, at) {

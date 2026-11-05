@@ -6,6 +6,7 @@ package semantic
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/karosia/ai-trace-cause/graph"
@@ -90,7 +91,7 @@ func NewService(
 
 // RecordSource validates and records a Source node, generating an ID
 // if source.ID is empty. It returns ErrEmptySourceKind if Kind is
-// empty.
+// empty. The returned Source carries the assigned ID and RecordedAt.
 func (s *Service) RecordSource(
 	ctx context.Context,
 	source Source,
@@ -99,111 +100,75 @@ func (s *Service) RecordSource(
 		return Source{}, ErrEmptySourceKind
 	}
 
-	id, err := s.resolveID(
+	properties := map[string]any{
+		"kind": source.Kind,
+		"uri":  source.URI,
+	}
+	setIfNotNil(properties, "metadata", source.Metadata)
+
+	node, err := s.record(
+		ctx,
 		source.ID,
+		NodeTypeSource,
+		properties,
+		source.Validity,
+		nil,
 	)
 	if err != nil {
 		return Source{}, err
 	}
 
-	source.ID = id
-
-	node := graph.Node{
-		ID:   source.ID,
-		Type: string(NodeTypeSource),
-		Properties: map[string]any{
-			"kind": source.Kind,
-			"uri":  source.URI,
-		},
-	}
-
-	if source.Metadata != nil {
-		node.Properties["metadata"] = cloneMap(
-			source.Metadata,
-		)
-	}
-
-	s.applyTemporal(
-		&node,
-		source.Validity,
-	)
-
-	s.applyTelemetry(
-		ctx,
-		&node,
-	)
-
-	if err := s.graph.AddNode(
-		ctx,
-		node,
-	); err != nil {
-		return Source{}, err
-	}
+	source.ID = node.ID
+	source.RecordedAt = node.RecordedAt
 
 	return source, nil
 }
 
 // RecordObservation validates and records an Observation node,
 // generating an ID if observation.ID is empty. It returns
-// ErrEmptyObservationName if Name is empty.
+// ErrEmptyObservationName if Name is empty. Use WithCauses to link the
+// Source(s) that produced it in the same call.
 func (s *Service) RecordObservation(
 	ctx context.Context,
 	observation Observation,
+	options ...RecordOption,
 ) (Observation, error) {
 	if observation.Name == "" {
 		return Observation{}, ErrEmptyObservationName
 	}
 
-	id, err := s.resolveID(
+	properties := map[string]any{
+		"name":  observation.Name,
+		"value": observation.Value,
+	}
+	setIfNotNil(properties, "metadata", observation.Metadata)
+
+	node, err := s.record(
+		ctx,
 		observation.ID,
+		NodeTypeObservation,
+		properties,
+		observation.Validity,
+		options,
 	)
 	if err != nil {
 		return Observation{}, err
 	}
 
-	observation.ID = id
-
-	node := graph.Node{
-		ID:   observation.ID,
-		Type: string(NodeTypeObservation),
-		Properties: map[string]any{
-			"name":  observation.Name,
-			"value": observation.Value,
-		},
-	}
-
-	if observation.Metadata != nil {
-		node.Properties["metadata"] = cloneMap(
-			observation.Metadata,
-		)
-	}
-
-	s.applyTemporal(
-		&node,
-		observation.Validity,
-	)
-
-	s.applyTelemetry(
-		ctx,
-		&node,
-	)
-
-	if err := s.graph.AddNode(
-		ctx,
-		node,
-	); err != nil {
-		return Observation{}, err
-	}
+	observation.ID = node.ID
+	observation.RecordedAt = node.RecordedAt
 
 	return observation, nil
 }
 
 // RecordFact validates and records a Fact node, generating an ID if
 // fact.ID is empty. It returns ErrEmptyFactStatement if Statement is
-// empty, or ErrInvalidConfidence if Confidence is outside [0, 1].
+// empty, or ErrInvalidConfidence if Confidence is outside [0, 1]. Use
+// WithCauses to link the supporting Observation(s) in the same call.
 func (s *Service) RecordFact(
 	ctx context.Context,
 	fact Fact,
+	options ...RecordOption,
 ) (Fact, error) {
 	if fact.Statement == "" {
 		return Fact{}, ErrEmptyFactStatement
@@ -214,46 +179,26 @@ func (s *Service) RecordFact(
 		return Fact{}, ErrInvalidConfidence
 	}
 
-	id, err := s.resolveID(
+	properties := map[string]any{
+		"statement":  fact.Statement,
+		"confidence": fact.Confidence,
+	}
+	setIfNotNil(properties, "metadata", fact.Metadata)
+
+	node, err := s.record(
+		ctx,
 		fact.ID,
+		NodeTypeFact,
+		properties,
+		fact.Validity,
+		options,
 	)
 	if err != nil {
 		return Fact{}, err
 	}
 
-	fact.ID = id
-
-	node := graph.Node{
-		ID:   fact.ID,
-		Type: string(NodeTypeFact),
-		Properties: map[string]any{
-			"statement":  fact.Statement,
-			"confidence": fact.Confidence,
-		},
-	}
-
-	if fact.Metadata != nil {
-		node.Properties["metadata"] = cloneMap(
-			fact.Metadata,
-		)
-	}
-
-	s.applyTemporal(
-		&node,
-		fact.Validity,
-	)
-
-	s.applyTelemetry(
-		ctx,
-		&node,
-	)
-
-	if err := s.graph.AddNode(
-		ctx,
-		node,
-	); err != nil {
-		return Fact{}, err
-	}
+	fact.ID = node.ID
+	fact.RecordedAt = node.RecordedAt
 
 	return fact, nil
 }
@@ -261,10 +206,12 @@ func (s *Service) RecordFact(
 // RecordDecision validates and records a Decision node, generating an
 // ID if decision.ID is empty. It returns ErrEmptyDecisionOutcome if
 // Outcome is empty, or ErrInvalidConfidence if Confidence is outside
-// [0, 1].
+// [0, 1]. Use WithCauses to link the Fact(s) it was based on in the
+// same call.
 func (s *Service) RecordDecision(
 	ctx context.Context,
 	decision Decision,
+	options ...RecordOption,
 ) (Decision, error) {
 	if decision.Outcome == "" {
 		return Decision{}, ErrEmptyDecisionOutcome
@@ -275,108 +222,66 @@ func (s *Service) RecordDecision(
 		return Decision{}, ErrInvalidConfidence
 	}
 
-	id, err := s.resolveID(
+	properties := map[string]any{
+		"outcome":    decision.Outcome,
+		"rationale":  decision.Rationale,
+		"confidence": decision.Confidence,
+	}
+	setIfNotNil(properties, "metadata", decision.Metadata)
+
+	node, err := s.record(
+		ctx,
 		decision.ID,
+		NodeTypeDecision,
+		properties,
+		decision.Validity,
+		options,
 	)
 	if err != nil {
 		return Decision{}, err
 	}
 
-	decision.ID = id
-
-	node := graph.Node{
-		ID:   decision.ID,
-		Type: string(NodeTypeDecision),
-		Properties: map[string]any{
-			"outcome":    decision.Outcome,
-			"rationale":  decision.Rationale,
-			"confidence": decision.Confidence,
-		},
-	}
-
-	if decision.Metadata != nil {
-		node.Properties["metadata"] = cloneMap(
-			decision.Metadata,
-		)
-	}
-
-	s.applyTemporal(
-		&node,
-		decision.Validity,
-	)
-
-	s.applyTelemetry(
-		ctx,
-		&node,
-	)
-
-	if err := s.graph.AddNode(
-		ctx,
-		node,
-	); err != nil {
-		return Decision{}, err
-	}
+	decision.ID = node.ID
+	decision.RecordedAt = node.RecordedAt
 
 	return decision, nil
 }
 
 // RecordAction validates and records an Action node, generating an ID
 // if action.ID is empty. It returns ErrEmptyActionName if Name is
-// empty.
+// empty. Use WithCauses to link the Decision(s) that caused it in the
+// same call; this is required for TraceActionCauseAtActionTime to see
+// those decisions.
 func (s *Service) RecordAction(
 	ctx context.Context,
 	action Action,
+	options ...RecordOption,
 ) (Action, error) {
 	if action.Name == "" {
 		return Action{}, ErrEmptyActionName
 	}
 
-	id, err := s.resolveID(
+	properties := map[string]any{
+		"name":   action.Name,
+		"target": action.Target,
+	}
+	setIfNotNil(properties, "parameters", action.Parameters)
+	setIfNotNil(properties, "metadata", action.Metadata)
+
+	node, err := s.record(
+		ctx,
 		action.ID,
+		NodeTypeAction,
+		properties,
+		action.Validity,
+		options,
 	)
 	if err != nil {
 		return Action{}, err
 	}
 
-	action.ID = id
-
-	node := graph.Node{
-		ID:   action.ID,
-		Type: string(NodeTypeAction),
-		Properties: map[string]any{
-			"name":   action.Name,
-			"target": action.Target,
-		},
-	}
-
-	if action.Parameters != nil {
-		node.Properties["parameters"] = cloneMap(
-			action.Parameters,
-		)
-	}
-
-	if action.Metadata != nil {
-		node.Properties["metadata"] = cloneMap(
-			action.Metadata,
-		)
-	}
-
-	s.applyTemporal(
-		&node,
-		action.Validity,
-	)
-
-	s.applyTelemetry(
-		ctx,
-		&node,
-	)
-
-	if err := s.graph.AddNode(
-		ctx,
-		node,
-	); err != nil {
-		return Action{}, err
-	}
+	action.ID = node.ID
+	action.RecordedAt = node.RecordedAt
 
 	return action, nil
 }
@@ -617,20 +522,6 @@ func (s *Service) requireNodeType(ctx context.Context, nodeID string, expected N
 	return nil
 }
 
-func cloneMap(values map[string]any) map[string]any {
-	if values == nil {
-		return nil
-	}
-
-	cloned := make(map[string]any, len(values))
-
-	for key, value := range values {
-		cloned[key] = value
-	}
-
-	return cloned
-}
-
 func (s *Service) applyTemporal(
 	node *graph.Node,
 	validity Validity,
@@ -718,13 +609,8 @@ func (s *Service) addRelation(
 	to string,
 	relation RelationType,
 ) error {
-	edgeID, err := s.resolveID("")
-	if err != nil {
-		return err
-	}
-
 	edge := graph.Edge{
-		ID:         edgeID,
+		ID:         RelationID(relation, from, to),
 		From:       from,
 		To:         to,
 		Type:       string(relation),
@@ -736,8 +622,25 @@ func (s *Service) addRelation(
 		&edge,
 	)
 
-	return s.graph.AddEdge(
+	err := s.graph.AddEdge(
 		ctx,
 		edge,
 	)
+	if errors.Is(err, graph.ErrEdgeAlreadyExists) {
+		// Same relationship recorded before (e.g. an agent retry).
+		// The original edge, and its RecordedAt, are kept.
+		return nil
+	}
+
+	return err
+}
+
+func setIfNotNil(
+	properties map[string]any,
+	key string,
+	value map[string]any,
+) {
+	if value != nil {
+		properties[key] = value
+	}
 }

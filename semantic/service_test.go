@@ -771,10 +771,7 @@ func TestRecordSourceRejectsEmptyKind(
 func TestSupports(t *testing.T) {
 	ctx := context.Background()
 
-	service, g := newTestService(
-		t,
-		"edge-supports",
-	)
+	service, g := newTestService(t)
 
 	observation, err := service.RecordObservation(
 		ctx,
@@ -813,7 +810,11 @@ func TestSupports(t *testing.T) {
 
 	edge, err := g.GetEdge(
 		ctx,
-		"edge-supports",
+		semantic.RelationID(
+			semantic.RelationSupports,
+			observation.ID,
+			fact.ID,
+		),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -848,10 +849,7 @@ func TestSupportsRejectsWrongNodeType(
 ) {
 	ctx := context.Background()
 
-	service, _ := newTestService(
-		t,
-		"edge-supports",
-	)
+	service, _ := newTestService(t)
 
 	factA, err := service.RecordFact(
 		ctx,
@@ -897,10 +895,7 @@ func TestSupportsRejectsWrongNodeType(
 func TestBasisOf(t *testing.T) {
 	ctx := context.Background()
 
-	service, g := newTestService(
-		t,
-		"edge-basis",
-	)
+	service, g := newTestService(t)
 
 	fact, err := service.RecordFact(
 		ctx,
@@ -940,7 +935,11 @@ func TestBasisOf(t *testing.T) {
 
 	edge, err := g.GetEdge(
 		ctx,
-		"edge-basis",
+		semantic.RelationID(
+			semantic.RelationBasisOf,
+			fact.ID,
+			decision.ID,
+		),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -975,10 +974,7 @@ func TestBasisOfRejectsWrongFactType(
 ) {
 	ctx := context.Background()
 
-	service, _ := newTestService(
-		t,
-		"edge-basis",
-	)
+	service, _ := newTestService(t)
 
 	observation, err := service.RecordObservation(
 		ctx,
@@ -1024,10 +1020,7 @@ func TestBasisOfRejectsWrongFactType(
 func TestCaused(t *testing.T) {
 	ctx := context.Background()
 
-	service, g := newTestService(
-		t,
-		"edge-caused",
-	)
+	service, g := newTestService(t)
 
 	decision, err := service.RecordDecision(
 		ctx,
@@ -1067,7 +1060,11 @@ func TestCaused(t *testing.T) {
 
 	edge, err := g.GetEdge(
 		ctx,
-		"edge-caused",
+		semantic.RelationID(
+			semantic.RelationCaused,
+			decision.ID,
+			action.ID,
+		),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1102,10 +1099,7 @@ func TestCausedRejectsWrongDecisionType(
 ) {
 	ctx := context.Background()
 
-	service, _ := newTestService(
-		t,
-		"edge-caused",
-	)
+	service, _ := newTestService(t)
 
 	fact, err := service.RecordFact(
 		ctx,
@@ -1150,10 +1144,7 @@ func TestCausedRejectsWrongDecisionType(
 func TestProduced(t *testing.T) {
 	ctx := context.Background()
 
-	service, g := newTestService(
-		t,
-		"edge-produced",
-	)
+	service, g := newTestService(t)
 
 	source, err := service.RecordSource(
 		ctx,
@@ -1191,7 +1182,11 @@ func TestProduced(t *testing.T) {
 
 	edge, err := g.GetEdge(
 		ctx,
-		"edge-produced",
+		semantic.RelationID(
+			semantic.RelationProduced,
+			source.ID,
+			observation.ID,
+		),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1226,10 +1221,7 @@ func TestProducedRejectsWrongSourceType(
 ) {
 	ctx := context.Background()
 
-	service, _ := newTestService(
-		t,
-		"edge-produced",
-	)
+	service, _ := newTestService(t)
 
 	fact, err := service.RecordFact(
 		ctx,
@@ -1275,13 +1267,7 @@ func TestProducedRejectsWrongSourceType(
 func TestTraceActionCause(t *testing.T) {
 	ctx := context.Background()
 
-	service, _ := newTestService(
-		t,
-		"edge-produced",
-		"edge-supports",
-		"edge-basis",
-		"edge-caused",
-	)
+	service, _ := newTestService(t)
 
 	source, err := service.RecordSource(
 		ctx,

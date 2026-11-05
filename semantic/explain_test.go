@@ -109,13 +109,7 @@ func buildLinearChain(
 func TestTraceSourceEffects(t *testing.T) {
 	ctx := context.Background()
 
-	trace, _ := newTestService(
-		t,
-		"edge-produced",
-		"edge-supports",
-		"edge-basis",
-		"edge-caused",
-	)
+	trace, _ := newTestService(t)
 
 	source, observation, fact, decision, action := buildLinearChain(
 		t,
@@ -207,13 +201,7 @@ func TestTraceSourceEffectsRejectsNonSource(t *testing.T) {
 func TestExplain(t *testing.T) {
 	ctx := context.Background()
 
-	trace, _ := newTestService(
-		t,
-		"edge-produced",
-		"edge-supports",
-		"edge-basis",
-		"edge-caused",
-	)
+	trace, _ := newTestService(t)
 
 	buildLinearChain(t, ctx, trace)
 

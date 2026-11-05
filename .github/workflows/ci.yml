@@ -34,14 +34,27 @@ jobs:
             exit 1
           fi
 
+      - name: Check go.mod / go.sum are tidy
+        run: go mod tidy -diff
+
       - name: Vet
         run: go vet ./...
 
       - name: Build
         run: go build ./...
 
+      # -coverpkg=./... credits code exercised through another
+      # package's tests (e.g. semantic via the root SDK tests).
       - name: Test (race + coverage)
-        run: go test -race -coverprofile=coverage.out ./...
+        run: go test -race -coverpkg=./... -coverprofile=coverage.out ./...
 
-      - name: Coverage summary
-        run: go tool cover -func=coverage.out | tail -1
+      - name: Enforce coverage floor
+        env:
+          COVERAGE_FLOOR: "80"
+        run: |
+          total="$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%", "", $3); print $3}')"
+          echo "Total coverage: ${total}% (floor: ${COVERAGE_FLOOR}%)"
+          awk -v t="$total" -v f="$COVERAGE_FLOOR" 'BEGIN { exit !(t + 0 >= f + 0) }' || {
+            echo "Coverage ${total}% is below the ${COVERAGE_FLOOR}% floor"
+            exit 1
+          }

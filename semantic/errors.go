@@ -51,11 +51,29 @@ var (
 		"source kind cannot be empty",
 	)
 
-	// ErrIDGeneratorUnavailable is returned when an entity or
-	// relationship needs a generated ID but no IDGenerator is
-	// configured.
+	// ErrIDGeneratorUnavailable is returned when an entity needs a
+	// generated ID but no IDGenerator is configured.
 	ErrIDGeneratorUnavailable = errors.New(
 		"ID generator is not configured",
+	)
+
+	// ErrEmptyRetractionNodeID is returned when recording a
+	// Retraction with an empty NodeID.
+	ErrEmptyRetractionNodeID = errors.New(
+		"retraction node ID cannot be empty",
+	)
+
+	// ErrEmptyRetractionReason is returned when recording a
+	// Retraction with an empty Reason.
+	ErrEmptyRetractionReason = errors.New(
+		"retraction reason cannot be empty",
+	)
+
+	// ErrAlreadyRetracted is returned when retracting a node that
+	// already has a retraction with a different Reason or
+	// EffectiveAt. Retrying an identical retraction is not an error.
+	ErrAlreadyRetracted = errors.New(
+		"node is already retracted",
 	)
 )
 

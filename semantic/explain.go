@@ -19,21 +19,20 @@ var causalVerbs = map[[2]NodeType]string{
 }
 
 // Explain walks backward from the Action identified by actionID, as
-// TraceActionCause does, and renders the resulting causal chain as a
-// human-readable narrative: one sentence per causal edge, ordered from
-// the action back to its originating source(s), joined by newlines.
+// TraceActionCauseGraph does, and renders the resulting causal graph
+// as a human-readable narrative (see ExplainGraph).
 //
 // It is intended for logging, debugging, and audit output where a
 // plain-English answer to "why did this happen?" is more useful than
-// a []graph.Visit walked by hand. For programmatic access to the
-// chain itself, use TraceActionCause. It returns the same errors as
-// TraceActionCause.
+// a graph walked by hand. For programmatic access, use
+// TraceActionCauseGraph. It returns the same errors as
+// TraceActionCauseGraph.
 func (s *Service) Explain(
 	ctx context.Context,
 	actionID string,
 	maxDepth int,
 ) (string, error) {
-	visits, err := s.TraceActionCause(
+	causal, err := s.TraceActionCauseGraph(
 		ctx,
 		actionID,
 		maxDepth,
@@ -42,38 +41,44 @@ func (s *Service) Explain(
 		return "", err
 	}
 
-	return renderExplanation(visits), nil
+	return ExplainGraph(causal), nil
 }
 
-// renderExplanation turns a set of causally-linked visits into a
-// narrative, one sentence per parent/child edge. The root visit (with
-// no parent) contributes no sentence on its own; it appears as the
-// effect side of its child's sentence instead.
-func renderExplanation(visits []graph.Visit) string {
+// ExplainGraph renders a CausalGraph as one sentence per causal
+// relationship, joined by newlines. Every relationship in
+// causal.Edges is rendered, so a node with several causes (or that
+// causes several effects) appears in each relevant sentence. Retracted
+// nodes are annotated with their retraction reason.
+//
+// Combine it with TraceActionCauseAtActionTime or
+// TraceActionCauseGraphAt to explain an action as it was understood at
+// a given time.
+func ExplainGraph(causal CausalGraph) string {
 	nodesByID := make(
 		map[string]graph.Node,
-		len(visits),
+		len(causal.Visits),
 	)
 
-	for _, visit := range visits {
+	for _, visit := range causal.Visits {
 		nodesByID[visit.Node.ID] = visit.Node
 	}
 
-	lines := make([]string, 0, len(visits))
+	lines := make([]string, 0, len(causal.Edges))
 
-	for _, visit := range visits {
-		if visit.ParentNodeID == "" {
+	for _, edge := range causal.Edges {
+		cause, ok := nodesByID[edge.From]
+		if !ok {
 			continue
 		}
 
-		parent, ok := nodesByID[visit.ParentNodeID]
+		effect, ok := nodesByID[edge.To]
 		if !ok {
 			continue
 		}
 
 		lines = append(
 			lines,
-			explainEdge(visit.Node, parent),
+			explainEdge(cause, effect, causal.Retractions),
 		)
 	}
 
@@ -83,7 +88,11 @@ func renderExplanation(visits []graph.Visit) string {
 // explainEdge renders a single causal step as a sentence, where cause
 // is the node that occurred earlier in the chain and effect is the
 // node it led to.
-func explainEdge(cause, effect graph.Node) string {
+func explainEdge(
+	cause graph.Node,
+	effect graph.Node,
+	retractions map[string]Retraction,
+) string {
 	verb, ok := causalVerbs[[2]NodeType{
 		NodeType(cause.Type),
 		NodeType(effect.Type),
@@ -94,10 +103,26 @@ func explainEdge(cause, effect graph.Node) string {
 
 	return fmt.Sprintf(
 		"%s %s %s.",
-		describeNode(effect),
+		describeWithRetraction(effect, retractions),
 		verb,
-		describeNode(cause),
+		describeWithRetraction(cause, retractions),
 	)
+}
+
+func describeWithRetraction(
+	node graph.Node,
+	retractions map[string]Retraction,
+) string {
+	description := describeNode(node)
+
+	if retraction, ok := retractions[node.ID]; ok {
+		description += fmt.Sprintf(
+			" [retracted: %s]",
+			retraction.Reason,
+		)
+	}
+
+	return description
 }
 
 // describeNode renders a short, human-readable label for a node using

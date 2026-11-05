@@ -49,6 +49,14 @@ var (
 		"node is not visible at the requested time",
 	)
 
+	// ErrUnsupportedPropertyValue is returned when a node or edge
+	// property value is not JSON-representable (for example a func,
+	// channel, struct, or NaN). The wrapped error names the path of
+	// the offending value.
+	ErrUnsupportedPropertyValue = errors.New(
+		"unsupported property value",
+	)
+
 	// ErrStoreNotQueryable is returned by Graph.FindNodes when the
 	// underlying Store does not implement Queryable.
 	ErrStoreNotQueryable = errors.New(
