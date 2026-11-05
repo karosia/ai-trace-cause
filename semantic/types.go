@@ -35,10 +35,31 @@ const (
 	// RelationCaused connects a Decision to the Action it caused.
 	RelationCaused RelationType = "CAUSED"
 
+	// RelationResultedIn connects an Action to an Observation it
+	// produced, such as a tool call to its result. It closes the
+	// agent loop: Decision -> Action -> Observation -> Fact ->
+	// Decision.
+	RelationResultedIn RelationType = "RESULTED_IN"
+
+	// RelationInfers connects a premise Fact to a Fact concluded from
+	// it.
+	RelationInfers RelationType = "INFERS"
+
+	// RelationRefines connects a Decision to a narrower Decision made
+	// within it, such as a plan to one of its steps.
+	RelationRefines RelationType = "REFINES"
+
 	// RelationRetracted is a self-loop annotation edge recording that
 	// a node was retracted. It is not a causal relationship and never
 	// appears in CausalGraph.Edges; see Service.Retract.
 	RelationRetracted RelationType = "RETRACTED"
+)
+
+// Property keys under which RunID and StepID are stored on graph
+// nodes. Use them with graph.NodeFilter.Properties, or use Run.FindNodes.
+const (
+	PropertyRunID  = "runId"
+	PropertyStepID = "stepId"
 )
 
 // Source represents where a piece of information originated, such as
@@ -51,6 +72,14 @@ type Source struct {
 	URI  string `json:"uri,omitempty"`
 
 	Metadata map[string]any `json:"metadata,omitempty"`
+
+	// RunID groups everything recorded for one agent task or
+	// conversation. Optional; set automatically by Step.
+	RunID string `json:"runId,omitempty"`
+
+	// StepID identifies the agent step (typically one model call)
+	// that recorded the entity. Optional; set automatically by Step.
+	StepID string `json:"stepId,omitempty"`
 
 	Validity Validity `json:"validity,omitzero"`
 
@@ -69,6 +98,14 @@ type Observation struct {
 
 	Metadata map[string]any `json:"metadata,omitempty"`
 
+	// RunID groups everything recorded for one agent task or
+	// conversation. Optional; set automatically by Step.
+	RunID string `json:"runId,omitempty"`
+
+	// StepID identifies the agent step (typically one model call)
+	// that recorded the entity. Optional; set automatically by Step.
+	StepID string `json:"stepId,omitempty"`
+
 	Validity Validity `json:"validity,omitzero"`
 
 	// RecordedAt is set by the Service when the entity is recorded;
@@ -86,6 +123,14 @@ type Fact struct {
 	Confidence float64 `json:"confidence"`
 
 	Metadata map[string]any `json:"metadata,omitempty"`
+
+	// RunID groups everything recorded for one agent task or
+	// conversation. Optional; set automatically by Step.
+	RunID string `json:"runId,omitempty"`
+
+	// StepID identifies the agent step (typically one model call)
+	// that recorded the entity. Optional; set automatically by Step.
+	StepID string `json:"stepId,omitempty"`
 
 	Validity Validity `json:"validity,omitzero"`
 
@@ -107,6 +152,14 @@ type Decision struct {
 
 	Metadata map[string]any `json:"metadata,omitempty"`
 
+	// RunID groups everything recorded for one agent task or
+	// conversation. Optional; set automatically by Step.
+	RunID string `json:"runId,omitempty"`
+
+	// StepID identifies the agent step (typically one model call)
+	// that recorded the entity. Optional; set automatically by Step.
+	StepID string `json:"stepId,omitempty"`
+
 	Validity Validity `json:"validity,omitzero"`
 
 	// RecordedAt is set by the Service when the entity is recorded;
@@ -124,6 +177,14 @@ type Action struct {
 
 	Parameters map[string]any `json:"parameters,omitempty"`
 	Metadata   map[string]any `json:"metadata,omitempty"`
+
+	// RunID groups everything recorded for one agent task or
+	// conversation. Optional; set automatically by Step.
+	RunID string `json:"runId,omitempty"`
+
+	// StepID identifies the agent step (typically one model call)
+	// that recorded the entity. Optional; set automatically by Step.
+	StepID string `json:"stepId,omitempty"`
 
 	Validity Validity `json:"validity,omitzero"`
 

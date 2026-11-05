@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"reflect"
 	"time"
 )
 
@@ -20,6 +21,28 @@ type NodeFilter struct {
 	// RecordedBefore restricts results to nodes recorded strictly
 	// before this time. Nil imposes no upper bound.
 	RecordedBefore *time.Time
+
+	// Properties restricts results to nodes whose top-level
+	// properties include every given key with an equal value
+	// (reflect.DeepEqual, so dynamic types must match: int(5) does not
+	// equal int64(5)). Nil or empty imposes no constraint.
+	Properties map[string]any
+}
+
+// MatchesProperties reports whether properties satisfies the
+// Properties constraint of filter. Store implementations can use it to
+// apply that constraint consistently.
+func (filter NodeFilter) MatchesProperties(
+	properties map[string]any,
+) bool {
+	for key, want := range filter.Properties {
+		got, ok := properties[key]
+		if !ok || !reflect.DeepEqual(got, want) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Queryable is an optional capability a Store may implement to list

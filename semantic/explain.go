@@ -8,16 +8,6 @@ import (
 	"github.com/karosia/ai-trace-cause/graph"
 )
 
-// causalVerbs describes, for each fixed (cause, effect) node type
-// pair enforced by Produced, Supports, BasisOf, and Caused, how the
-// effect relates back to its cause in a rendered sentence.
-var causalVerbs = map[[2]NodeType]string{
-	{NodeTypeSource, NodeTypeObservation}: "was produced by",
-	{NodeTypeObservation, NodeTypeFact}:   "was supported by",
-	{NodeTypeFact, NodeTypeDecision}:      "was based on",
-	{NodeTypeDecision, NodeTypeAction}:    "was caused by",
-}
-
 // Explain walks backward from the Action identified by actionID, as
 // TraceActionCauseGraph does, and renders the resulting causal graph
 // as a human-readable narrative (see ExplainGraph).
@@ -78,7 +68,12 @@ func ExplainGraph(causal CausalGraph) string {
 
 		lines = append(
 			lines,
-			explainEdge(cause, effect, causal.Retractions),
+			explainEdge(
+				cause,
+				RelationType(edge.Type),
+				effect,
+				causal.Retractions,
+			),
 		)
 	}
 
@@ -87,25 +82,32 @@ func ExplainGraph(causal CausalGraph) string {
 
 // explainEdge renders a single causal step as a sentence, where cause
 // is the node that occurred earlier in the chain and effect is the
-// node it led to.
+// node it led to. Relations without a built-in verb (from a custom
+// Schema) are rendered as "<effect> <-[RELATION]- <cause>".
 func explainEdge(
 	cause graph.Node,
+	relation RelationType,
 	effect graph.Node,
 	retractions map[string]Retraction,
 ) string {
-	verb, ok := causalVerbs[[2]NodeType{
-		NodeType(cause.Type),
-		NodeType(effect.Type),
-	}]
+	effectText := describeWithRetraction(effect, retractions)
+	causeText := describeWithRetraction(cause, retractions)
+
+	verb, ok := relationVerbs[relation]
 	if !ok {
-		verb = "led to"
+		return fmt.Sprintf(
+			"%s <-[%s]- %s.",
+			effectText,
+			relation,
+			causeText,
+		)
 	}
 
 	return fmt.Sprintf(
 		"%s %s %s.",
-		describeWithRetraction(effect, retractions),
+		effectText,
 		verb,
-		describeWithRetraction(cause, retractions),
+		causeText,
 	)
 }
 

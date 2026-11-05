@@ -69,6 +69,31 @@ var (
 		"retraction reason cannot be empty",
 	)
 
+	// ErrRelationNotAllowed is the sentinel wrapped by
+	// RelationNotAllowedError; use errors.Is to detect it.
+	ErrRelationNotAllowed = errors.New(
+		"relation not allowed by schema",
+	)
+
+	// ErrAmbiguousRelation is returned when a cause is linked without
+	// naming the relation and the schema allows more than one
+	// relation between the two node types.
+	ErrAmbiguousRelation = errors.New(
+		"ambiguous relation",
+	)
+
+	// ErrEmptyRunID is returned when committing a Step of a Run that
+	// was created with an empty ID.
+	ErrEmptyRunID = errors.New(
+		"run ID cannot be empty",
+	)
+
+	// ErrStepCommitted is returned when adding to, or committing, a
+	// Step that was already committed.
+	ErrStepCommitted = errors.New(
+		"step already committed",
+	)
+
 	// ErrAlreadyRetracted is returned when retracting a node that
 	// already has a retraction with a different Reason or
 	// EffectiveAt. Retrying an identical retraction is not an error.
@@ -101,4 +126,39 @@ func (e *UnexpectedNodeTypeError) Error() string {
 // ErrUnexpectedNodeType) works on an UnexpectedNodeTypeError.
 func (e *UnexpectedNodeTypeError) Unwrap() error {
 	return ErrUnexpectedNodeType
+}
+
+// RelationNotAllowedError is returned when the Service's Schema does
+// not allow a relationship between two node types. Relation is empty
+// when no relation was named and none could be inferred. It wraps
+// ErrRelationNotAllowed.
+type RelationNotAllowedError struct {
+	From     NodeType
+	Relation RelationType
+	To       NodeType
+}
+
+// Error implements the error interface.
+func (e *RelationNotAllowedError) Error() string {
+	if e.Relation == "" {
+		return fmt.Sprintf(
+			"%v: no relation from %s to %s",
+			ErrRelationNotAllowed,
+			e.From,
+			e.To,
+		)
+	}
+
+	return fmt.Sprintf(
+		"%v: %s --%s--> %s",
+		ErrRelationNotAllowed,
+		e.From,
+		e.Relation,
+		e.To,
+	)
+}
+
+// Unwrap returns ErrRelationNotAllowed.
+func (e *RelationNotAllowedError) Unwrap() error {
+	return ErrRelationNotAllowed
 }

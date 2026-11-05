@@ -248,3 +248,28 @@ func retractionFromEdge(edge graph.Edge) Retraction {
 
 	return retraction
 }
+
+// TraceEffectsGraph walks forward from any node through everything it
+// went on to influence, up to maxDepth hops, and returns the reached
+// nodes, every causal relationship between them, and their
+// retractions. It generalizes TraceSourceEffects to any starting
+// point, answering for example "a fact was retracted: which decisions
+// and actions relied on it?". It returns graph.ErrNodeNotFound if
+// nodeID does not exist.
+func (s *Service) TraceEffectsGraph(
+	ctx context.Context,
+	nodeID string,
+	maxDepth int,
+) (CausalGraph, error) {
+	sub, err := s.graph.Subgraph(
+		ctx,
+		nodeID,
+		graph.DirectionOutgoing,
+		maxDepth,
+	)
+	if err != nil {
+		return CausalGraph{}, err
+	}
+
+	return newCausalGraph(sub), nil
+}

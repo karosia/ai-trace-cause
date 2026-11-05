@@ -6,7 +6,6 @@ package semantic
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/karosia/ai-trace-cause/graph"
@@ -23,6 +22,8 @@ type Service struct {
 	telemetry TelemetryHook
 
 	idGenerator IDGenerator
+
+	schema Schema
 }
 
 // Option configures a Service created with NewService.
@@ -65,6 +66,17 @@ func WithIDGenerator(
 	}
 }
 
+// WithSchema configures which relationships the Service accepts. The
+// default is DefaultSchema(); extend it with Schema.With to model
+// application-specific relationships.
+func WithSchema(
+	schema Schema,
+) Option {
+	return func(service *Service) {
+		service.schema = schema
+	}
+}
+
 // NewService creates a Service backed by graph g. It returns
 // ErrNilGraph if g is nil.
 func NewService(
@@ -80,6 +92,7 @@ func NewService(
 		now: func() time.Time {
 			return time.Now().UTC()
 		},
+		schema: DefaultSchema(),
 	}
 
 	for _, option := range options {
@@ -96,24 +109,12 @@ func (s *Service) RecordSource(
 	ctx context.Context,
 	source Source,
 ) (Source, error) {
-	if source.Kind == "" {
-		return Source{}, ErrEmptySourceKind
+	node, err := source.toNode()
+	if err != nil {
+		return Source{}, err
 	}
 
-	properties := map[string]any{
-		"kind": source.Kind,
-		"uri":  source.URI,
-	}
-	setIfNotNil(properties, "metadata", source.Metadata)
-
-	node, err := s.record(
-		ctx,
-		source.ID,
-		NodeTypeSource,
-		properties,
-		source.Validity,
-		nil,
-	)
+	node, err = s.record(ctx, node, nil)
 	if err != nil {
 		return Source{}, err
 	}
@@ -127,30 +128,18 @@ func (s *Service) RecordSource(
 // RecordObservation validates and records an Observation node,
 // generating an ID if observation.ID is empty. It returns
 // ErrEmptyObservationName if Name is empty. Use WithCauses to link the
-// Source(s) that produced it in the same call.
+// Source(s) or Action(s) that produced it in the same call.
 func (s *Service) RecordObservation(
 	ctx context.Context,
 	observation Observation,
 	options ...RecordOption,
 ) (Observation, error) {
-	if observation.Name == "" {
-		return Observation{}, ErrEmptyObservationName
+	node, err := observation.toNode()
+	if err != nil {
+		return Observation{}, err
 	}
 
-	properties := map[string]any{
-		"name":  observation.Name,
-		"value": observation.Value,
-	}
-	setIfNotNil(properties, "metadata", observation.Metadata)
-
-	node, err := s.record(
-		ctx,
-		observation.ID,
-		NodeTypeObservation,
-		properties,
-		observation.Validity,
-		options,
-	)
+	node, err = s.record(ctx, node, options)
 	if err != nil {
 		return Observation{}, err
 	}
@@ -164,35 +153,19 @@ func (s *Service) RecordObservation(
 // RecordFact validates and records a Fact node, generating an ID if
 // fact.ID is empty. It returns ErrEmptyFactStatement if Statement is
 // empty, or ErrInvalidConfidence if Confidence is outside [0, 1]. Use
-// WithCauses to link the supporting Observation(s) in the same call.
+// WithCauses to link the supporting Observation(s) or premise Fact(s)
+// in the same call.
 func (s *Service) RecordFact(
 	ctx context.Context,
 	fact Fact,
 	options ...RecordOption,
 ) (Fact, error) {
-	if fact.Statement == "" {
-		return Fact{}, ErrEmptyFactStatement
+	node, err := fact.toNode()
+	if err != nil {
+		return Fact{}, err
 	}
 
-	if fact.Confidence < 0 ||
-		fact.Confidence > 1 {
-		return Fact{}, ErrInvalidConfidence
-	}
-
-	properties := map[string]any{
-		"statement":  fact.Statement,
-		"confidence": fact.Confidence,
-	}
-	setIfNotNil(properties, "metadata", fact.Metadata)
-
-	node, err := s.record(
-		ctx,
-		fact.ID,
-		NodeTypeFact,
-		properties,
-		fact.Validity,
-		options,
-	)
+	node, err = s.record(ctx, node, options)
 	if err != nil {
 		return Fact{}, err
 	}
@@ -206,37 +179,19 @@ func (s *Service) RecordFact(
 // RecordDecision validates and records a Decision node, generating an
 // ID if decision.ID is empty. It returns ErrEmptyDecisionOutcome if
 // Outcome is empty, or ErrInvalidConfidence if Confidence is outside
-// [0, 1]. Use WithCauses to link the Fact(s) it was based on in the
-// same call.
+// [0, 1]. Use WithCauses to link the Fact(s) it was based on, or the
+// Decision it refines, in the same call.
 func (s *Service) RecordDecision(
 	ctx context.Context,
 	decision Decision,
 	options ...RecordOption,
 ) (Decision, error) {
-	if decision.Outcome == "" {
-		return Decision{}, ErrEmptyDecisionOutcome
+	node, err := decision.toNode()
+	if err != nil {
+		return Decision{}, err
 	}
 
-	if decision.Confidence < 0 ||
-		decision.Confidence > 1 {
-		return Decision{}, ErrInvalidConfidence
-	}
-
-	properties := map[string]any{
-		"outcome":    decision.Outcome,
-		"rationale":  decision.Rationale,
-		"confidence": decision.Confidence,
-	}
-	setIfNotNil(properties, "metadata", decision.Metadata)
-
-	node, err := s.record(
-		ctx,
-		decision.ID,
-		NodeTypeDecision,
-		properties,
-		decision.Validity,
-		options,
-	)
+	node, err = s.record(ctx, node, options)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -257,25 +212,12 @@ func (s *Service) RecordAction(
 	action Action,
 	options ...RecordOption,
 ) (Action, error) {
-	if action.Name == "" {
-		return Action{}, ErrEmptyActionName
+	node, err := action.toNode()
+	if err != nil {
+		return Action{}, err
 	}
 
-	properties := map[string]any{
-		"name":   action.Name,
-		"target": action.Target,
-	}
-	setIfNotNil(properties, "parameters", action.Parameters)
-	setIfNotNil(properties, "metadata", action.Metadata)
-
-	node, err := s.record(
-		ctx,
-		action.ID,
-		NodeTypeAction,
-		properties,
-		action.Validity,
-		options,
-	)
+	node, err = s.record(ctx, node, options)
 	if err != nil {
 		return Action{}, err
 	}
@@ -294,27 +236,11 @@ func (s *Service) Produced(
 	sourceID string,
 	observationID string,
 ) error {
-	if err := s.requireNodeType(
+	return s.typedLink(
 		ctx,
-		sourceID,
-		NodeTypeSource,
-	); err != nil {
-		return err
-	}
-
-	if err := s.requireNodeType(
-		ctx,
-		observationID,
-		NodeTypeObservation,
-	); err != nil {
-		return err
-	}
-
-	return s.addRelation(
-		ctx,
-		sourceID,
-		observationID,
+		sourceID, NodeTypeSource,
 		RelationProduced,
+		observationID, NodeTypeObservation,
 	)
 }
 
@@ -326,27 +252,11 @@ func (s *Service) Supports(
 	observationID string,
 	factID string,
 ) error {
-	if err := s.requireNodeType(
+	return s.typedLink(
 		ctx,
-		observationID,
-		NodeTypeObservation,
-	); err != nil {
-		return err
-	}
-
-	if err := s.requireNodeType(
-		ctx,
-		factID,
-		NodeTypeFact,
-	); err != nil {
-		return err
-	}
-
-	return s.addRelation(
-		ctx,
-		observationID,
-		factID,
+		observationID, NodeTypeObservation,
 		RelationSupports,
+		factID, NodeTypeFact,
 	)
 }
 
@@ -358,27 +268,11 @@ func (s *Service) BasisOf(
 	factID string,
 	decisionID string,
 ) error {
-	if err := s.requireNodeType(
+	return s.typedLink(
 		ctx,
-		factID,
-		NodeTypeFact,
-	); err != nil {
-		return err
-	}
-
-	if err := s.requireNodeType(
-		ctx,
-		decisionID,
-		NodeTypeDecision,
-	); err != nil {
-		return err
-	}
-
-	return s.addRelation(
-		ctx,
-		factID,
-		decisionID,
+		factID, NodeTypeFact,
 		RelationBasisOf,
+		decisionID, NodeTypeDecision,
 	)
 }
 
@@ -390,28 +284,81 @@ func (s *Service) Caused(
 	decisionID string,
 	actionID string,
 ) error {
-	if err := s.requireNodeType(
+	return s.typedLink(
 		ctx,
-		decisionID,
-		NodeTypeDecision,
-	); err != nil {
-		return err
-	}
-
-	if err := s.requireNodeType(
-		ctx,
-		actionID,
-		NodeTypeAction,
-	); err != nil {
-		return err
-	}
-
-	return s.addRelation(
-		ctx,
-		decisionID,
-		actionID,
+		decisionID, NodeTypeDecision,
 		RelationCaused,
+		actionID, NodeTypeAction,
 	)
+}
+
+// ResultedIn records an Action -> Observation RelationResultedIn
+// relationship, such as a tool call and the result it returned. It
+// returns UnexpectedNodeTypeError if either ID does not refer to a
+// node of the expected type.
+func (s *Service) ResultedIn(
+	ctx context.Context,
+	actionID string,
+	observationID string,
+) error {
+	return s.typedLink(
+		ctx,
+		actionID, NodeTypeAction,
+		RelationResultedIn,
+		observationID, NodeTypeObservation,
+	)
+}
+
+// Infers records a Fact -> Fact RelationInfers relationship from a
+// premise to a conclusion drawn from it. It returns
+// UnexpectedNodeTypeError if either ID does not refer to a Fact.
+func (s *Service) Infers(
+	ctx context.Context,
+	premiseFactID string,
+	conclusionFactID string,
+) error {
+	return s.typedLink(
+		ctx,
+		premiseFactID, NodeTypeFact,
+		RelationInfers,
+		conclusionFactID, NodeTypeFact,
+	)
+}
+
+// Refines records a Decision -> Decision RelationRefines relationship
+// from a broader decision (such as a plan) to a narrower one made
+// within it. It returns UnexpectedNodeTypeError if either ID does not
+// refer to a Decision.
+func (s *Service) Refines(
+	ctx context.Context,
+	parentDecisionID string,
+	childDecisionID string,
+) error {
+	return s.typedLink(
+		ctx,
+		parentDecisionID, NodeTypeDecision,
+		RelationRefines,
+		childDecisionID, NodeTypeDecision,
+	)
+}
+
+func (s *Service) typedLink(
+	ctx context.Context,
+	fromID string,
+	fromType NodeType,
+	relation RelationType,
+	toID string,
+	toType NodeType,
+) error {
+	if err := s.requireNodeType(ctx, fromID, fromType); err != nil {
+		return err
+	}
+
+	if err := s.requireNodeType(ctx, toID, toType); err != nil {
+		return err
+	}
+
+	return s.Link(ctx, fromID, relation, toID)
 }
 
 // TraceActionCause walks backward from the Action identified by
@@ -524,17 +471,8 @@ func (s *Service) requireNodeType(ctx context.Context, nodeID string, expected N
 
 func (s *Service) applyTemporal(
 	node *graph.Node,
-	validity Validity,
 ) {
 	node.RecordedAt = s.now().UTC()
-
-	node.ValidFrom = cloneTime(
-		validity.ValidFrom,
-	)
-
-	node.ValidUntil = cloneTime(
-		validity.ValidUntil,
-	)
 }
 
 func (s *Service) applyTelemetry(
@@ -601,46 +539,4 @@ func (s *Service) resolveID(
 	}
 
 	return s.idGenerator.NewID()
-}
-
-func (s *Service) addRelation(
-	ctx context.Context,
-	from string,
-	to string,
-	relation RelationType,
-) error {
-	edge := graph.Edge{
-		ID:         RelationID(relation, from, to),
-		From:       from,
-		To:         to,
-		Type:       string(relation),
-		RecordedAt: s.now().UTC(),
-	}
-
-	s.applyEdgeTelemetry(
-		ctx,
-		&edge,
-	)
-
-	err := s.graph.AddEdge(
-		ctx,
-		edge,
-	)
-	if errors.Is(err, graph.ErrEdgeAlreadyExists) {
-		// Same relationship recorded before (e.g. an agent retry).
-		// The original edge, and its RecordedAt, are kept.
-		return nil
-	}
-
-	return err
-}
-
-func setIfNotNil(
-	properties map[string]any,
-	key string,
-	value map[string]any,
-) {
-	if value != nil {
-		properties[key] = value
-	}
 }

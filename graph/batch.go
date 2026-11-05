@@ -85,3 +85,63 @@ func (g *Graph) AddEdges(
 
 	return nil
 }
+
+// AtomicBatchStore is an optional capability a Store may implement to
+// persist nodes and edges together, all or nothing, e.g. in one
+// database transaction. Edges in the batch may reference nodes in the
+// same batch. Graph.AddBatch uses it when available.
+type AtomicBatchStore interface {
+	PutBatch(ctx context.Context, nodes []Node, edges []Edge) error
+}
+
+// AddBatch validates and adds nodes and edges together. Edges may
+// reference nodes in the same batch.
+//
+// If the underlying Store implements AtomicBatchStore, the whole
+// batch is applied atomically: on error, nothing was written.
+// Otherwise AddBatch falls back to AddNodes followed by AddEdges, and
+// a store failure between the two can leave the nodes without their
+// edges. Validation failures never write anything, either way.
+func (g *Graph) AddBatch(
+	ctx context.Context,
+	nodes []Node,
+	edges []Edge,
+) error {
+	preparedNodes := make([]Node, 0, len(nodes))
+
+	for _, node := range nodes {
+		node, err := prepareNode(node)
+		if err != nil {
+			return err
+		}
+
+		preparedNodes = append(preparedNodes, node)
+	}
+
+	preparedEdges := make([]Edge, 0, len(edges))
+
+	for _, edge := range edges {
+		edge, err := prepareEdge(edge)
+		if err != nil {
+			return err
+		}
+
+		preparedEdges = append(preparedEdges, edge)
+	}
+
+	if atomic, ok := g.store.(AtomicBatchStore); ok {
+		return atomic.PutBatch(ctx, preparedNodes, preparedEdges)
+	}
+
+	if len(preparedNodes) > 0 {
+		if err := g.AddNodes(ctx, preparedNodes); err != nil {
+			return err
+		}
+	}
+
+	if len(preparedEdges) > 0 {
+		return g.AddEdges(ctx, preparedEdges)
+	}
+
+	return nil
+}

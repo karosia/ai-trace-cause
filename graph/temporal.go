@@ -153,7 +153,7 @@ func (g *Graph) BFSAt(
 			return nil, err
 		}
 
-		sortEdgesChronologically(edges)
+		sortEdgesChronologically(edges, direction)
 
 		for _, edge := range edges {
 			if !edgeVisibleAt(edge, at) {
@@ -182,6 +182,13 @@ func (g *Graph) BFSAt(
 			}
 
 			visited[neighborID] = struct{}{}
+
+			if err := g.checkVisitLimit(
+				len(visited),
+				startID,
+			); err != nil {
+				return nil, err
+			}
 
 			queue = append(
 				queue,

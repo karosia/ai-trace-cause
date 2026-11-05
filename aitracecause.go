@@ -32,8 +32,8 @@ type Trace struct {
 
 // New creates a Trace configured with the given Options.
 //
-// With no options, New uses a concurrent-safe in-memory store and a
-// UUIDv7 ID generator. Use WithStore, WithMemoryStore, WithClock,
+// With no options, New uses a concurrent-safe in-memory store, a
+// UUIDv7 ID generator, DefaultSchema, and DefaultMaxVisits. Use WithStore, WithMemoryStore, WithClock,
 // WithTelemetryHook, and WithIDGenerator to customize behavior.
 func New(
 	options ...Option,
@@ -46,7 +46,10 @@ func New(
 		}
 	}
 
-	g, err := graph.New(cfg.store)
+	g, err := graph.New(
+		cfg.store,
+		graph.WithMaxVisits(cfg.maxVisits),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -54,8 +57,15 @@ func New(
 	semanticOptions := make(
 		[]semantic.Option,
 		0,
-		3,
+		4,
 	)
+
+	if cfg.schema != nil {
+		semanticOptions = append(
+			semanticOptions,
+			semantic.WithSchema(*cfg.schema),
+		)
+	}
 
 	if cfg.clock != nil {
 		semanticOptions = append(
@@ -227,6 +237,88 @@ func (t *Trace) Caused(
 		ctx,
 		decisionID,
 		actionID,
+	)
+}
+
+// ResultedIn records an Action -> Observation RESULTED_IN
+// relationship, such as a tool call and the result it returned. This
+// is what lets a trace follow an agent across tool calls.
+func (t *Trace) ResultedIn(
+	ctx context.Context,
+	actionID string,
+	observationID string,
+) error {
+	return t.semantic.ResultedIn(
+		ctx,
+		actionID,
+		observationID,
+	)
+}
+
+// Infers records a Fact -> Fact INFERS relationship from a premise to
+// a conclusion drawn from it.
+func (t *Trace) Infers(
+	ctx context.Context,
+	premiseFactID string,
+	conclusionFactID string,
+) error {
+	return t.semantic.Infers(
+		ctx,
+		premiseFactID,
+		conclusionFactID,
+	)
+}
+
+// Refines records a Decision -> Decision REFINES relationship from a
+// broader decision, such as a plan, to a narrower one made within it.
+func (t *Trace) Refines(
+	ctx context.Context,
+	parentDecisionID string,
+	childDecisionID string,
+) error {
+	return t.semantic.Refines(
+		ctx,
+		parentDecisionID,
+		childDecisionID,
+	)
+}
+
+// Link records a relationship of any type the configured Schema
+// allows, from fromID (the cause) to toID (the effect). It returns a
+// *semantic.RelationNotAllowedError otherwise. Recording the same
+// relationship again is a no-op.
+func (t *Trace) Link(
+	ctx context.Context,
+	fromID string,
+	relation RelationType,
+	toID string,
+) error {
+	return t.semantic.Link(
+		ctx,
+		fromID,
+		relation,
+		toID,
+	)
+}
+
+// Run returns a handle for recording one agent task or conversation
+// step by step. See Run.Step.
+func (t *Trace) Run(runID string) *Run {
+	return t.semantic.Run(runID)
+}
+
+// TraceEffectsGraph walks forward from any node through everything it
+// went on to influence, answering for example "this fact was
+// retracted: which decisions and actions relied on it?".
+func (t *Trace) TraceEffectsGraph(
+	ctx context.Context,
+	nodeID string,
+	maxDepth int,
+) (CausalGraph, error) {
+	return t.semantic.TraceEffectsGraph(
+		ctx,
+		nodeID,
+		maxDepth,
 	)
 }
 

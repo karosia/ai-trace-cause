@@ -333,9 +333,11 @@ func TestWithCausesValidatesBeforeWriting(t *testing.T) {
 	// A Fact is not a valid direct cause of an Action.
 	_, err := trace.RecordAction(ctx, aitracecause.Action{Name: "a"}, aitracecause.WithCauses(fact.ID))
 
-	var typeErr *semantic.UnexpectedNodeTypeError
-	if !errors.As(err, &typeErr) || typeErr.Expected != semantic.NodeTypeDecision {
-		t.Fatalf("wrong cause type: err = %v, want UnexpectedNodeTypeError(expected Decision)", err)
+	var relErr *semantic.RelationNotAllowedError
+	if !errors.As(err, &relErr) ||
+		relErr.From != semantic.NodeTypeFact ||
+		relErr.To != semantic.NodeTypeAction {
+		t.Fatalf("wrong cause type: err = %v, want RelationNotAllowedError(Fact -> Action)", err)
 	}
 
 	_, err = trace.RecordDecision(ctx, aitracecause.Decision{Outcome: "d"}, aitracecause.WithCauses(fact.ID, "missing"))

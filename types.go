@@ -48,6 +48,72 @@ func WithCauses(causeIDs ...string) RecordOption {
 	return semantic.WithCauses(causeIDs...)
 }
 
+// WithCausesVia is like WithCauses but names the relation explicitly,
+// for cause types the schema links by more than one relation.
+func WithCausesVia(
+	relation RelationType,
+	causeIDs ...string,
+) RecordOption {
+	return semantic.WithCausesVia(relation, causeIDs...)
+}
+
+// NodeType identifies an entity type in the causal model.
+type NodeType = semantic.NodeType
+
+// RelationType identifies a relationship type in the causal model.
+type RelationType = semantic.RelationType
+
+// Entity types.
+const (
+	NodeTypeSource      = semantic.NodeTypeSource
+	NodeTypeObservation = semantic.NodeTypeObservation
+	NodeTypeFact        = semantic.NodeTypeFact
+	NodeTypeDecision    = semantic.NodeTypeDecision
+	NodeTypeAction      = semantic.NodeTypeAction
+)
+
+// Relationship types in DefaultSchema. Each points from cause to
+// effect.
+const (
+	RelationProduced   = semantic.RelationProduced
+	RelationResultedIn = semantic.RelationResultedIn
+	RelationSupports   = semantic.RelationSupports
+	RelationInfers     = semantic.RelationInfers
+	RelationBasisOf    = semantic.RelationBasisOf
+	RelationRefines    = semantic.RelationRefines
+	RelationCaused     = semantic.RelationCaused
+)
+
+// Schema is the set of relationships a Trace accepts. See
+// DefaultSchema, NewSchema, and Schema.With.
+type Schema = semantic.Schema
+
+// RelationRule allows one relationship type between two entity types.
+type RelationRule = semantic.RelationRule
+
+// DefaultSchema returns the built-in causal model, including the agent
+// loop (Action RESULTED_IN Observation), inference between Facts, and
+// refinement between Decisions.
+func DefaultSchema() Schema {
+	return semantic.DefaultSchema()
+}
+
+// NewSchema returns a Schema allowing exactly rules.
+func NewSchema(rules ...RelationRule) (Schema, error) {
+	return semantic.NewSchema(rules...)
+}
+
+// Run groups everything an agent records for one task or
+// conversation. See Trace.Run.
+type Run = semantic.Run
+
+// Step buffers one agent step's entities and relationships and writes
+// them together on Commit. See Run.Step.
+type Step = semantic.Step
+
+// StepResult describes a committed Step.
+type StepResult = semantic.StepResult
+
 // ExplainGraph renders a CausalGraph as one plain-English sentence per
 // causal relationship, annotating retracted nodes. Use it with
 // Trace.TraceActionCauseAtActionTime to explain an action as it was

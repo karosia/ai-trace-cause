@@ -10,17 +10,19 @@ It complements operational observability systems such as OpenTelemetry by adding
 Source
   │ PRODUCED
   ▼
-Observation
-  │ SUPPORTS
-  ▼
-Fact
-  │ BASIS_OF
-  ▼
-Decision
-  │ CAUSED
-  ▼
-Action
+Observation ◄────────────┐
+  │ SUPPORTS             │
+  ▼                      │
+Fact ⟲ INFERS            │ RESULTED_IN
+  │ BASIS_OF             │ (tool call result)
+  ▼                      │
+Decision ⟲ REFINES       │
+  │ CAUSED               │
+  ▼                      │
+Action ──────────────────┘
 ```
+
+The loop is what real agents do: an action (a tool call) produces an observation that feeds the next decision. Traces follow an agent across tool calls.
 
 This makes it possible to answer questions such as:
 
@@ -29,6 +31,8 @@ This makes it possible to answer questions such as:
 - Which observations supported those facts?
 - Where did the information originally come from?
 - What did the agent know at the time?
+- Which earlier tool call produced the evidence for this decision?
+- A fact turned out to be wrong: which actions relied on it?
 - Which OpenTelemetry trace and span produced a decision or action?
 
 ---
@@ -37,7 +41,9 @@ This makes it possible to answer questions such as:
 
 - Semantic causal graph for AI agent execution
 - Source, Observation, Fact, Decision, and Action entities
-- Typed causal relationships
+- Typed causal relationships, validated against an extensible `Schema`
+- Agent loops: tool-call results (`RESULTED_IN`), inference between facts, plan refinement
+- `Run` / `Step` API: record one agent step in a few calls, written atomically
 - Automatic UUIDv7 ID generation for entities
 - Caller-provided IDs when external IDs already exist
 - Idempotent relationships with deterministic IDs (safe to retry)
@@ -46,7 +52,7 @@ This makes it possible to answer questions such as:
 - Forward traversal from Source to the Actions it influenced
 - Human-readable causal explanations covering every relationship
 - Breadth-first and depth-first graph traversal
-- Cycle protection and maximum traversal depth
+- Cycle protection, maximum traversal depth, and a cap on visited nodes
 - Temporal context with `RecordedAt`, `ValidFrom`, and `ValidUntil`
 - Historical causal reconstruction, including "what did the agent know when it acted?"
 - Append-only retractions that never rewrite history
@@ -348,11 +354,41 @@ err := trace.Caused(
 Decision ──CAUSED──> Action
 ```
 
+### Agent Loop Relationships
+
+```text
+Action      ──RESULTED_IN──> Observation   trace.ResultedIn(ctx, actionID, observationID)
+Fact        ──INFERS──>      Fact          trace.Infers(ctx, premiseID, conclusionID)
+Decision    ──REFINES──>     Decision      trace.Refines(ctx, planID, subDecisionID)
+```
+
+Relationships always point from cause to effect.
+
 Relationship IDs are derived from the relationship itself (see `semantic.RelationID`), so recording the same relationship twice is a no-op. Agents retry; retries never create duplicate edges.
+
+### Schema
+
+The allowed relationships are data, not code. `DefaultSchema()` contains the seven above. Add your own and use them with `Link`:
+
+```go
+const Challenges aitracecause.RelationType = "CHALLENGES"
+
+schema, err := aitracecause.DefaultSchema().With(aitracecause.RelationRule{
+    From:     aitracecause.NodeTypeFact,
+    Relation: Challenges,
+    To:       aitracecause.NodeTypeDecision,
+})
+
+trace, err := aitracecause.New(aitracecause.WithSchema(schema))
+
+err = trace.Link(ctx, fact.ID, Challenges, decision.ID)
+```
+
+A relationship the schema does not allow fails with `*semantic.RelationNotAllowedError`. `Explain` renders custom relations as `Decision "x" <-[CHALLENGES]- Fact "y".`
 
 ### Linking Causes While Recording
 
-Instead of a separate `Produced`/`Supports`/`BasisOf`/`Caused` call, an entity can be linked to its direct causes in the same call. The relationship type is implied by the entity type:
+Instead of a separate relationship call, an entity can be linked to its direct causes in the same call. The relationship type is inferred from the schema and the two entity types (an Observation caused by an Action gets `RESULTED_IN`; one caused by a Source gets `PRODUCED`):
 
 ```go
 decision, err := trace.RecordDecision(
@@ -368,7 +404,40 @@ action, err := trace.RecordAction(
 )
 ```
 
-All causes are validated before anything is written, so a missing or wrongly-typed cause leaves the graph unchanged. The relationships share the entity's `RecordedAt`, which matters for [historical tracing](#what-did-the-agent-know-when-it-acted).
+The entity and its relationships are written in one atomic batch, so a missing or wrongly-typed cause leaves the graph unchanged. The relationships share the entity's `RecordedAt`, which matters for [historical tracing](#what-did-the-agent-know-when-it-acted). If a custom schema allows several relations between two types, name one with `WithCausesVia(relation, ids...)`.
+
+---
+
+## Recording Agent Steps
+
+`Run` groups everything recorded for one task or conversation; a `Step` records one agent step (typically one model call and what it led to). Builder methods return IDs immediately and take causes as trailing arguments; errors are collected and returned once by `Commit`:
+
+```go
+run := trace.Run("incident-4521")
+
+// Step 1: the model decides to query metrics.
+step := run.Step("llm-call-1") // e.g. the model response ID; "" generates one
+alert   := step.Observation(aitracecause.Observation{Name: "pager_alert", Value: "p99 high"})
+symptom := step.Fact(aitracecause.Fact{Statement: "checkout is slow", Confidence: 0.9}, alert)
+plan    := step.Decision(aitracecause.Decision{Outcome: "investigate checkout"}, symptom)
+query   := step.Action(aitracecause.Action{Name: "prometheus_query"}, plan)
+if _, err := step.Commit(ctx); err != nil {
+    return err
+}
+
+// Step 2: the tool result drives the next decision.
+step = run.Step("llm-call-2")
+cpu   := step.Observation(aitracecause.Observation{Name: "cpu_usage", Value: 97}, query) // RESULTED_IN
+cause := step.Fact(aitracecause.Fact{Statement: "checkout is CPU-bound"}, cpu, symptom)
+scale := step.Decision(aitracecause.Decision{Outcome: "scale checkout"}, cause, plan)   // BASIS_OF + REFINES
+step.Action(aitracecause.Action{Name: "scale_service"}, scale)
+result, err := step.Commit(ctx)
+```
+
+- `Commit` writes the whole step in one batch: atomically with a store implementing `graph.AtomicBatchStore` (the memory store does). A schema violation, missing cause, or invalid entity writes nothing.
+- Every entity in a step shares one `RecordedAt` and carries `RunID` and `StepID` (stored as the `runId`/`stepId` properties).
+- `run.FindNodes(ctx, filter)` lists a run's nodes; `step.Link(from, relation, to)` adds an explicitly-typed relationship.
+- A `Step` is safe for concurrent use and cannot be reused after a successful `Commit`.
 
 ---
 
@@ -478,6 +547,12 @@ visits, err := trace.TraceSourceEffects(
 
 This is the mirror image of `TraceActionCause`: instead of asking "why did this action happen?", it answers "what did this source go on to influence?".
 
+`TraceEffectsGraph` does the same from any node and returns a `CausalGraph`, e.g. to find every decision and action that relied on a retracted fact:
+
+```go
+effects, err := trace.TraceEffectsGraph(ctx, fact.ID, 5)
+```
+
 ```text
 Source
   ↓ PRODUCED
@@ -524,6 +599,12 @@ for _, edge := range causal.Edges {
 ```
 
 `ExplainGraph(causal)` renders any `CausalGraph` as text, including the historical ones below.
+
+---
+
+### Limiting Trace Size
+
+Depth alone does not bound a trace: one Source can feed thousands of Observations, and agent loops chain steps indefinitely. A trace that would visit more than `DefaultMaxVisits` (10,000) nodes fails with an error wrapping `graph.ErrMaxVisitsExceeded` rather than returning a silently truncated result. Configure it with `WithMaxVisits(n)`; `0` removes the limit.
 
 ---
 
@@ -755,13 +836,19 @@ type EdgeBatchStore interface {
     PutEdges(ctx context.Context, edges []Edge) error
 }
 
+// Persist nodes and edges together, all or nothing. Edges may reference
+// nodes in the same batch. Used by WithCauses and Step.Commit.
+type AtomicBatchStore interface {
+    PutBatch(ctx context.Context, nodes []Node, edges []Edge) error
+}
+
 // List nodes by criteria other than ID lookup or traversal.
 type Queryable interface {
     FindNodes(ctx context.Context, filter NodeFilter) ([]Node, error)
 }
 ```
 
-The built-in memory store implements all three. `Graph.AddNodes` and `Graph.AddEdges` use the batch interfaces when available and fall back to one call per node/edge otherwise:
+The built-in memory store implements all four. Without `AtomicBatchStore`, `WithCauses` and `Step.Commit` fall back to writing nodes, then edges, so a store failure in between can leave nodes without their relationships. `Graph.AddNodes` and `Graph.AddEdges` use the batch interfaces when available and fall back to one call per node/edge otherwise:
 
 ```go
 if err := g.AddNodes(ctx, nodes); err != nil {
@@ -769,7 +856,7 @@ if err := g.AddNodes(ctx, nodes); err != nil {
 }
 ```
 
-`FindNodes` supports filtering by node type and by `RecordedAt` range, for queries traversal doesn't answer, such as "every Decision recorded in the last hour":
+`FindNodes` supports filtering by node type, by `RecordedAt` range, and by top-level property equality (`NodeFilter.Properties`), for queries traversal doesn't answer, such as "every Decision recorded in the last hour":
 
 ```go
 decisions, err := trace.FindNodes(

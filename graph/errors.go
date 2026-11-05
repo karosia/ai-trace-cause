@@ -57,6 +57,12 @@ var (
 		"unsupported property value",
 	)
 
+	// ErrMaxVisitsExceeded is returned by a traversal that would
+	// visit more nodes than the limit set with WithMaxVisits.
+	ErrMaxVisitsExceeded = errors.New(
+		"traversal exceeded the maximum number of visited nodes",
+	)
+
 	// ErrStoreNotQueryable is returned by Graph.FindNodes when the
 	// underlying Store does not implement Queryable.
 	ErrStoreNotQueryable = errors.New(

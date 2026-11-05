@@ -18,18 +18,61 @@ import (
 // nodes and edges before delegating persistence to the store.
 type Graph struct {
 	store Store
+
+	maxVisits int
+}
+
+// Option configures a Graph created with New.
+type Option func(*Graph)
+
+// WithMaxVisits caps how many nodes a single traversal (BFS, BFSAt,
+// DFS, Subgraph, SubgraphAt) may visit. A traversal that would visit
+// more returns an error wrapping ErrMaxVisitsExceeded instead of a
+// silently truncated result. Zero or a negative value, the default,
+// means no limit.
+//
+// Depth limits alone do not bound a traversal: a single Source feeding
+// thousands of Observations, or an agent loop chaining Actions and
+// Observations, can reach very many nodes within a few hops.
+func WithMaxVisits(maxVisits int) Option {
+	return func(g *Graph) {
+		g.maxVisits = maxVisits
+	}
 }
 
 // New creates a Graph backed by store. It returns ErrNilStore if store
 // is nil.
-func New(store Store) (*Graph, error) {
+func New(store Store, options ...Option) (*Graph, error) {
 	if store == nil {
 		return nil, ErrNilStore
 	}
 
-	return &Graph{
+	g := &Graph{
 		store: store,
-	}, nil
+	}
+
+	for _, option := range options {
+		if option != nil {
+			option(g)
+		}
+	}
+
+	return g, nil
+}
+
+// checkVisitLimit returns ErrMaxVisitsExceeded once visited exceeds
+// the configured limit.
+func (g *Graph) checkVisitLimit(visited int, startID string) error {
+	if g.maxVisits > 0 && visited > g.maxVisits {
+		return fmt.Errorf(
+			"%w: more than %d nodes reachable from %q; lower maxDepth or raise the limit",
+			ErrMaxVisitsExceeded,
+			g.maxVisits,
+			startID,
+		)
+	}
+
+	return nil
 }
 
 // AddNode validates and adds node to the graph. It returns

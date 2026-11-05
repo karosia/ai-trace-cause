@@ -29,6 +29,16 @@ type Store struct {
 	incoming map[string]map[string]struct{}
 }
 
+// Compile-time checks that Store implements graph.Store and every
+// optional capability.
+var (
+	_ graph.Store            = (*Store)(nil)
+	_ graph.NodeBatchStore   = (*Store)(nil)
+	_ graph.EdgeBatchStore   = (*Store)(nil)
+	_ graph.AtomicBatchStore = (*Store)(nil)
+	_ graph.Queryable        = (*Store)(nil)
+)
+
 // New creates an empty Store.
 func New() *Store {
 	return &Store{
@@ -198,18 +208,7 @@ func (s *Store) PutEdge(
 		)
 	}
 
-	s.edges[edge.ID] = cloneEdge(edge)
-
-	if s.outgoing[edge.From] == nil {
-		s.outgoing[edge.From] = make(map[string]struct{})
-	}
-
-	if s.incoming[edge.To] == nil {
-		s.incoming[edge.To] = make(map[string]struct{})
-	}
-
-	s.outgoing[edge.From][edge.ID] = struct{}{}
-	s.incoming[edge.To][edge.ID] = struct{}{}
+	s.putEdgeLocked(edge)
 
 	return nil
 }
@@ -277,21 +276,126 @@ func (s *Store) PutEdges(
 	}
 
 	for _, edge := range edges {
-		s.edges[edge.ID] = cloneEdge(edge)
-
-		if s.outgoing[edge.From] == nil {
-			s.outgoing[edge.From] = make(map[string]struct{})
-		}
-
-		if s.incoming[edge.To] == nil {
-			s.incoming[edge.To] = make(map[string]struct{})
-		}
-
-		s.outgoing[edge.From][edge.ID] = struct{}{}
-		s.incoming[edge.To][edge.ID] = struct{}{}
+		s.putEdgeLocked(edge)
 	}
 
 	return nil
+}
+
+// PutBatch adds nodes and edges as a single locked operation,
+// implementing graph.AtomicBatchStore. Edges may reference nodes in
+// the same batch. The whole batch is validated (empty ID/Type,
+// duplicate IDs within the batch or against the store, edge endpoints
+// that exist neither in the store nor the batch) before anything is
+// written, so a rejected batch leaves the store unchanged.
+func (s *Store) PutBatch(
+	ctx context.Context,
+	nodes []graph.Node,
+	edges []graph.Edge,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	batchNodes := make(map[string]struct{}, len(nodes))
+
+	for _, node := range nodes {
+		if node.ID == "" {
+			return graph.ErrEmptyNodeID
+		}
+
+		if node.Type == "" {
+			return graph.ErrEmptyNodeType
+		}
+
+		_, inStore := s.nodes[node.ID]
+		_, inBatch := batchNodes[node.ID]
+
+		if inStore || inBatch {
+			return fmt.Errorf(
+				"%w: %s",
+				graph.ErrNodeAlreadyExists,
+				node.ID,
+			)
+		}
+
+		batchNodes[node.ID] = struct{}{}
+	}
+
+	nodeExists := func(id string) bool {
+		if _, ok := s.nodes[id]; ok {
+			return true
+		}
+
+		_, ok := batchNodes[id]
+
+		return ok
+	}
+
+	batchEdges := make(map[string]struct{}, len(edges))
+
+	for _, edge := range edges {
+		if edge.ID == "" {
+			return graph.ErrEmptyEdgeID
+		}
+
+		if edge.Type == "" {
+			return graph.ErrEmptyEdgeType
+		}
+
+		_, inStore := s.edges[edge.ID]
+		_, inBatch := batchEdges[edge.ID]
+
+		if inStore || inBatch {
+			return fmt.Errorf(
+				"%w: %s",
+				graph.ErrEdgeAlreadyExists,
+				edge.ID,
+			)
+		}
+
+		for _, endpoint := range []string{edge.From, edge.To} {
+			if !nodeExists(endpoint) {
+				return fmt.Errorf(
+					"%w: %s",
+					graph.ErrNodeNotFound,
+					endpoint,
+				)
+			}
+		}
+
+		batchEdges[edge.ID] = struct{}{}
+	}
+
+	for _, node := range nodes {
+		s.nodes[node.ID] = cloneNode(node)
+	}
+
+	for _, edge := range edges {
+		s.putEdgeLocked(edge)
+	}
+
+	return nil
+}
+
+// putEdgeLocked stores a validated edge and indexes it. The caller
+// must hold s.mu.
+func (s *Store) putEdgeLocked(edge graph.Edge) {
+	s.edges[edge.ID] = cloneEdge(edge)
+
+	if s.outgoing[edge.From] == nil {
+		s.outgoing[edge.From] = make(map[string]struct{})
+	}
+
+	if s.incoming[edge.To] == nil {
+		s.incoming[edge.To] = make(map[string]struct{})
+	}
+
+	s.outgoing[edge.From][edge.ID] = struct{}{}
+	s.incoming[edge.To][edge.ID] = struct{}{}
 }
 
 // GetEdge returns the edge with the given id. It returns
@@ -426,6 +530,10 @@ func (s *Store) FindNodes(
 
 		if filter.RecordedBefore != nil &&
 			!node.RecordedAt.Before(*filter.RecordedBefore) {
+			continue
+		}
+
+		if !filter.MatchesProperties(node.Properties) {
 			continue
 		}
 

@@ -34,7 +34,7 @@ type Visit struct {
 // BFS performs a breadth-first traversal starting at startID,
 // following edges in direction up to maxDepth hops, and returns every
 // visited node in the order it was discovered. A node's edges are
-// followed in RecordedAt order, then by edge ID. It returns
+// followed in recording order (see sortEdgesChronologically). It returns
 // ErrInvalidMaxDepth if maxDepth is negative, ErrInvalidDirection if
 // direction is not recognized, or ErrNodeNotFound if startID does not
 // exist. Each node is visited at most once (cycle-safe).
@@ -105,7 +105,7 @@ func (g *Graph) BFS(
 			return nil, err
 		}
 
-		sortEdgesChronologically(edges)
+		sortEdgesChronologically(edges, direction)
 
 		for _, edge := range edges {
 			neighborID := neighborIDForDirection(
@@ -126,6 +126,13 @@ func (g *Graph) BFS(
 			}
 
 			visited[neighborID] = struct{}{}
+
+			if err := g.checkVisitLimit(
+				len(visited),
+				startID,
+			); err != nil {
+				return nil, err
+			}
 
 			queue = append(queue, queueItem{
 				node:         neighbor,
@@ -197,6 +204,13 @@ func (g *Graph) DFS(
 
 		visited[current.node.ID] = struct{}{}
 
+		if err := g.checkVisitLimit(
+			len(visited),
+			startID,
+		); err != nil {
+			return nil, err
+		}
+
 		results = append(results, Visit{
 			Node:         current.node,
 			Depth:        current.depth,
@@ -217,7 +231,7 @@ func (g *Graph) DFS(
 			return nil, err
 		}
 
-		sortEdgesChronologically(edges)
+		sortEdgesChronologically(edges, direction)
 
 		for i := len(edges) - 1; i >= 0; i-- {
 			edge := edges[i]
@@ -304,15 +318,23 @@ func validateDirection(
 	}
 }
 
-// sortEdgesChronologically orders edges by RecordedAt, then by ID, so
-// that traversal order follows recording order (the order an agent
-// gathered its evidence) regardless of how edge IDs are generated.
-// Ties, including edges with no RecordedAt, fall back to ID order,
-// which keeps traversal deterministic.
-func sortEdgesChronologically(edges []Edge) {
+// sortEdgesChronologically orders edges by RecordedAt, then by the ID
+// of the node at the far end (in direction), then by edge ID, so that
+// traversal follows recording order: the order an agent gathered its
+// evidence. Edges recorded in the same instant (e.g. one Step) fall
+// back to the neighbor's ID, which with the default UUIDv7 IDs is
+// creation order; edge IDs are content hashes and carry no order.
+func sortEdgesChronologically(edges []Edge, direction Direction) {
 	sort.Slice(edges, func(i, j int) bool {
 		if !edges[i].RecordedAt.Equal(edges[j].RecordedAt) {
 			return edges[i].RecordedAt.Before(edges[j].RecordedAt)
+		}
+
+		ni := neighborIDForDirection(edges[i], direction)
+		nj := neighborIDForDirection(edges[j], direction)
+
+		if ni != nj {
+			return ni < nj
 		}
 
 		return edges[i].ID < edges[j].ID

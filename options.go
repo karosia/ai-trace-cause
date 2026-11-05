@@ -17,7 +17,15 @@ type config struct {
 	telemetry semantic.TelemetryHook
 
 	idGenerator semantic.IDGenerator
+
+	schema *semantic.Schema
+
+	maxVisits int
 }
+
+// DefaultMaxVisits is the default cap on how many nodes a single trace
+// may visit. See WithMaxVisits.
+const DefaultMaxVisits = 10_000
 
 // Option configures a Trace created with New.
 type Option func(*config)
@@ -26,6 +34,7 @@ func defaultConfig() *config {
 	return &config{
 		store:       memory.New(),
 		idGenerator: uuidv7.New(),
+		maxVisits:   DefaultMaxVisits,
 	}
 }
 
@@ -84,5 +93,29 @@ func WithIDGenerator(
 		if generator != nil {
 			cfg.idGenerator = generator
 		}
+	}
+}
+
+// WithSchema configures which relationships the Trace accepts. The
+// default is DefaultSchema(); extend it with Schema.With to add
+// application-specific relationships.
+func WithSchema(
+	schema Schema,
+) Option {
+	return func(cfg *config) {
+		cfg.schema = &schema
+	}
+}
+
+// WithMaxVisits caps how many nodes a single trace may visit
+// (DefaultMaxVisits unless configured). A trace that would visit more
+// fails with an error wrapping graph.ErrMaxVisitsExceeded rather than
+// returning a silently truncated result. Zero or a negative value
+// removes the limit.
+func WithMaxVisits(
+	maxVisits int,
+) Option {
+	return func(cfg *config) {
+		cfg.maxVisits = maxVisits
 	}
 }
